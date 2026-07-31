@@ -1,21 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
+import '../../data/auth_repository.dart';
+import '../../data/profiles_repository.dart';
+import '../../data/resources_repository.dart';
 import '../../theme/app_tokens.dart';
 
 /// Phase 0 placeholder for the app's entry screen.
 ///
 /// The real home — budget input and generated plans — arrives in later phases.
-/// This exists so the router shell has somewhere to land and so "the app boots
-/// on a real device" is something you can actually look at.
-class HomeScreen extends StatelessWidget {
+/// For now it confirms who is signed in and what they own, which is what makes
+/// the Phase 1 reinstall test readable without opening the database.
+class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final tokens = theme.tokens;
+
+    final profile = ref.watch(currentProfileProvider);
+    final myResources = ref.watch(myResourceIdsProvider);
 
     return Scaffold(
       body: SafeArea(
@@ -25,18 +32,44 @@ class HomeScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Amora', style: theme.textTheme.headlineSmall),
-              SizedBox(height: tokens.sm),
               Text(
-                'Foundation is in place. Plans arrive in a later phase.',
-                style: theme.textTheme.bodyLarge,
+                switch (profile) {
+                  AsyncData(:final value?) when value.displayName != null =>
+                    'Hello, ${value.displayName}',
+                  _ => 'Amora',
+                },
+                style: theme.textTheme.headlineSmall,
+              ),
+              SizedBox(height: tokens.sm),
+              myResources.when(
+                loading: () => Text(
+                  'Loading what you own…',
+                  style: theme.textTheme.bodyLarge,
+                ),
+                error: (_, _) => Text(
+                  'Could not load what you own.',
+                  style: theme.textTheme.bodyLarge
+                      ?.copyWith(color: theme.colorScheme.error),
+                ),
+                data: (ids) => Text(
+                  ids.isEmpty
+                      ? 'You have not listed anything you own yet.'
+                      : 'You own ${ids.length} '
+                          '${ids.length == 1 ? 'thing' : 'things'} we can plan around.',
+                  style: theme.textTheme.bodyLarge,
+                ),
               ),
               SizedBox(height: tokens.lg),
               FilledButton(
-                // `push`, not `go`, so the gallery gets a back entry and the
-                // Material back arrow behaves as expected.
                 onPressed: () => context.push(Routes.devTokens),
                 child: const Text('View design tokens'),
+              ),
+              SizedBox(height: tokens.sm),
+              // Temporary: without it the only way back to signed-out is a
+              // reinstall. Moves to a settings screen in a later phase.
+              TextButton(
+                onPressed: () => ref.read(authRepositoryProvider).signOut(),
+                child: const Text('Sign out'),
               ),
             ],
           ),
