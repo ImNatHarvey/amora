@@ -26,8 +26,9 @@ that the tricycle there is ₱25.
 - **Never implement a future phase early**, even if it seems trivial.
 - **Never modify files unrelated to the current phase.** Flag it and wait instead.
 - **Explain architectural decisions before implementing them.**
-- Every phase must: compile, run on a real device, meet its written acceptance
-  criteria, and land as one clean Git commit.
+- Every phase must: compile, run on the physical test device, meet its written
+  acceptance criteria, and land as one clean Git commit. The emulator is not an
+  acceptable substitute — see `docs/00-architecture.md` §3 ("Development device").
 - **If you think I'm wrong, say so directly and propose the alternative.** Do not
   implement something you believe is a mistake without flagging it first.
 - Prefer maintainability over speed. Prefer boring over clever.
@@ -48,7 +49,7 @@ that the tricycle there is ₱25.
 | Backend | Supabase free — Postgres, Auth, Storage, Edge Functions, RLS | — |
 | Photos | Supabase Storage, compressed client-side | — |
 | AI | Google Gemini Flash, free API tier, called from an Edge Function | — |
-| Distribution | `flutter run` over USB / sideloaded APK | — |
+| Distribution | `flutter run` over wireless debugging / sideloaded APK | — |
 
 Full rationale for each choice, plus the data-fetching pattern (repository layer,
 Riverpod providers, error/loading handling, Edge Function calls): see

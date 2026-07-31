@@ -99,6 +99,31 @@ the project needs before reading anything else.
 | State management | Riverpod | latest stable, pinned in `pubspec.lock` at Phase 0 | Compile-time-safe dependency injection and reactive state without `BuildContext` lookups; testable outside the widget tree; its `FutureProvider`/`AsyncNotifier` types match an app whose every screen waits on a Supabase call. |
 | Styling | Material 3 + `ThemeExtension` | ships with the Flutter SDK | Material 3 is a complete, accessible design system for free; `ThemeExtension` lets Amora add its own tokens (cost-emphasis colors, map-leg styles) without forking Material's theme model. |
 
+### Development device
+
+All on-device verification happens on physical hardware. **The Android emulator
+is abandoned** — across several sessions it produced ANRs, killed the app
+mid-launch, dropped `adb` authorization, and took minutes per cold start, which
+made acceptance runs unreliable rather than merely slow.
+
+| | |
+|---|---|
+| Device | Samsung Galaxy S25 Ultra (SM-S938B) |
+| OS | Android 16, API 36 |
+| Connection | Wireless debugging (the USB cable is charge-only) |
+| Stable device id | `adb-R5CY224851B-4mLefi._adb-tls-connect._tcp` |
+
+Use the mDNS device id above, not the IP-and-port form — the IP changes on
+reboot, the mDNS name does not.
+
+> **This device flatters us.** The S25 Ultra is a flagship; Amora's users are on
+> mid-range Android over mobile data. Anything performance-sensitive — the
+> `flutter_map` render in Phase 4, photo capture and compression in Phase 6, long
+> list scrolling anywhere — will feel faster here than it will in the field and
+> **must be checked on weaker hardware before shipping.** A smooth frame rate on
+> this phone is not evidence of a smooth frame rate for a real user. This is the
+> same reasoning behind the motion rules in `02-design-system.md` §6.
+
 ---
 
 ## 4. Data fetching & API strategy
@@ -231,8 +256,10 @@ starts.
 **Startup is not awaited in `main()`.** `runApp` is called immediately and
 `appStartupProvider` performs `dotenv.load()` and `Supabase.initialize()` while the
 themed UI is already on screen. Awaiting it in `main()` held the first frame for
-~20 seconds on a cold emulator, showing a blank system splash. The gate is also the
-only retry path for a bad `.env` — a `ref.invalidate` instead of a restart.
+~20 seconds on a cold start, showing a blank system splash. (That figure was
+measured on the since-abandoned emulator, so treat it as the shape of the problem
+rather than a number to compare against.) The gate is also the only retry path for
+a bad `.env` — a `ref.invalidate` instead of a restart.
 
 ---
 
@@ -424,8 +451,8 @@ CSV import.
 > signal that matters. The catalogue grows continuously after this — the CSVs are
 > re-importable at any time (§6).
 
-*Accept:* app boots on a real device; `select count(*) from places` returns 15; at
-least 12 activities; a second user cannot read the first user's rows.
+*Accept:* app boots on the physical test device; `select count(*) from places`
+returns 15; at least 12 activities; a second user cannot read the first user's rows.
 
 > **Open debt — the seeded places are placeholders.** The 15 rows currently in
 > `places` are `test-*` / `(TEST)` stand-ins used to prove the import pipeline and
@@ -438,10 +465,23 @@ least 12 activities; a second user cannot read the first user's rows.
 > within 5 km". Phase 2 can be *built* against placeholders; it cannot be
 > *accepted* against them.
 
-**Phase 1 — Identity & inventory**
+**Phase 1 — Identity & inventory — ✅ COMPLETE**
 Supabase auth (email). Profile setup. "What do you already have?" resource picker.
 *Accept:* sign up, save a profile, select 5 resources, uninstall, reinstall, sign
 in, resources still there.
+
+> **Accepted on the Samsung Galaxy S25 Ultra over wireless debugging.** Every
+> criterion passed: sign-in, profile setup, the resource picker, and home all
+> work; after uninstall and reinstall the app landed straight on home, still
+> signed in, with the selected resources intact. Dark mode and 1.3× font scale
+> were checked on the new screens — no clipping, no overflow.
+>
+> Three bugs were found by running on hardware that the widget tests could not
+> catch, all fixed and confirmed on device: the router being constructed before
+> `Supabase.initialize` had run, an `async` GoRouter redirect rendering a black
+> screen while it awaited the profile, and a raw GoTrue JSON error string
+> reaching the user instead of a readable message. The first two are recorded as
+> boot-ordering constraints in §4.
 
 > **Google is deferred.** Only email is enabled. Adding Google later needs a
 > Google Cloud OAuth consent screen, an Android client keyed to the release
@@ -455,12 +495,19 @@ in, resources still there.
 >
 > **Email confirmation is currently OFF** so signup logs straight in. It must go
 > back ON before real users, or unverified addresses can register.
+>
+> **Leaked-password protection stays off, permanently for now.** Supabase's
+> security advisor flags it, but the HaveIBeenPwned check is a **Pro Plan**
+> feature and D7 requires this project to cost ₱0. The warning is therefore
+> expected and un-actionable — do not chase it. The free mitigation already in
+> place is the 6-character minimum enforced both by Supabase and by the sign-up
+> form. Revisit only if the project ever moves off the free tier.
 
 **Phase 2 — Retrieval, no AI**
 Bounding-box + budget + hours query. A crude non-AI plan builder picking the 3 nearest
 budget-fitting places. Haversine distances, fare lookup, cost totals. A minimal
 plain-text (no map, no styling) list screen renders the results — enough to satisfy
-the "runs on a real device" rule before Phase 4's real UI exists.
+the "runs on the physical device" rule before Phase 4's real UI exists.
 *Accept:* ₱200 + a location returns real, currently-open places within 5 km in under
 400 ms. **This phase proves the moat before any AI is involved. If the output here
 isn't useful, the AI won't save it.**

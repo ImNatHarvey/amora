@@ -193,7 +193,7 @@ When referencing, be specific about what to take — "the card density from this
 
 - [ ] No hardcoded colours, font sizes, or spacing values
 - [ ] Verified in light mode and dark mode
-- [ ] Verified on a real device, not just the emulator
+- [ ] Verified on the physical test device (`00-architecture.md` §3), not the emulator
 - [ ] Touch targets at least 48 dp
 - [ ] Text scales correctly at 1.3× system font size without clipping
 - [ ] Loading, empty, and error states all exist
