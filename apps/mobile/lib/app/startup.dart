@@ -13,32 +13,15 @@ import '../theme/app_tokens.dart';
 /// becomes retryable instead of fatal.
 final appStartupProvider = FutureProvider<void>((ref) => initialiseSupabase());
 
-/// Shows the app once [appStartupProvider] succeeds, and a legible failure if
-/// it doesn't.
+/// Shown while [appStartupProvider] is still running.
 ///
-/// Wraps every route via `MaterialApp.router`'s `builder`, so the theme,
-/// navigation and status bar are correct from the first frame regardless of
-/// how long startup takes.
-class AppStartupGate extends ConsumerWidget {
-  const AppStartupGate({required this.child, super.key});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return ref.watch(appStartupProvider).when(
-          data: (_) => child,
-          loading: () => const _StartupSplash(),
-          error: (error, _) => _StartupFailure(
-            message: '$error',
-            onRetry: () => ref.invalidate(appStartupProvider),
-          ),
-        );
-  }
-}
-
-class _StartupSplash extends StatelessWidget {
-  const _StartupSplash();
+/// Deliberately *not* placed inside `MaterialApp.router`'s `builder`: that
+/// builder runs after `routerConfig` is evaluated, and building the router
+/// touches `Supabase.instance` — which throws until initialisation finishes.
+/// The gate has to sit above the router, so `AmoraApp` switches on the startup
+/// state and only constructs the router once it has data.
+class StartupSplash extends StatelessWidget {
+  const StartupSplash({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -62,8 +45,12 @@ class _StartupSplash extends StatelessWidget {
 
 /// Startup failure is almost always a missing or incomplete `.env`, so the
 /// message is shown verbatim rather than replaced with something friendlier.
-class _StartupFailure extends StatelessWidget {
-  const _StartupFailure({required this.message, required this.onRetry});
+class StartupFailure extends StatelessWidget {
+  const StartupFailure({
+    required this.message,
+    required this.onRetry,
+    super.key,
+  });
 
   final String message;
   final VoidCallback onRetry;
