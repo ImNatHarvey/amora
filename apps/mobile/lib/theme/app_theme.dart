@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_tokens.dart';
+
 /// Amora's Material 3 theme.
 ///
 /// The whole colour system is derived at runtime from a single seed by
@@ -26,6 +28,9 @@ abstract final class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
+      // Amora's own spacing, radius and budget-colour tokens, read at call
+      // sites as `Theme.of(context).tokens`.
+      extensions: [AmoraTokens.fromColorScheme(colorScheme)],
     );
   }
 }
