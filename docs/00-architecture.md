@@ -172,13 +172,20 @@ lib/
     app_theme.dart                   -- Material 3 ThemeData + Amora ThemeExtension
     app_tokens.dart                  -- spacing, radius and budget-colour tokens
   app/
-    router.dart                      -- GoRouter route table
-    startup.dart                     -- appStartupProvider + the gate that shows
-                                        loading/error/app while it runs
+    router.dart                      -- GoRouter route table + redirect ladder
+    auth_refresh.dart                -- Listenable that re-runs the redirect
+    startup.dart                     -- appStartupProvider + splash/failure
+  models/
+    profile.dart
+    resource.dart
   data/
     supabase_client_provider.dart    -- the one Provider<SupabaseClient>
-    places_repository.dart
-    activities_repository.dart
+    repository_exception.dart        -- the single error type repositories throw
+    auth_repository.dart
+    profiles_repository.dart
+    resources_repository.dart
+    places_repository.dart           -- Phase 2
+    activities_repository.dart       -- Phase 2
     plan_generation_repository.dart  -- Phase 3+, wraps the Edge Function call
     plans_repository.dart            -- Phase 3+
   models/
@@ -187,13 +194,34 @@ lib/
     plan.dart                        -- Phase 3+
   features/
     home/
-      home_screen.dart               -- Phase 0 placeholder entry screen
+      home_screen.dart               -- placeholder entry screen
+    auth/
+      auth_form.dart                 -- shared email/password form
+      sign_in_screen.dart
+      sign_up_screen.dart
+    onboarding/
+      profile_setup_screen.dart
+      resource_picker_screen.dart
+      resource_icons.dart            -- icon-name -> IconData lookup
     dev/
       token_gallery_screen.dart      -- /dev/tokens, the light/dark check surface
     plan_request/                    -- Phase 2+
       plan_request_providers.dart
       plan_request_screen.dart
 ```
+
+**Two ordering constraints the app boot depends on**, both learned by breaking
+them on a device:
+
+1. *The router cannot be built before Supabase is initialised.* Constructing it
+   reaches `Supabase.instance` through the auth repository, which throws until
+   `Supabase.initialize` has run. `MaterialApp.router` evaluates `routerConfig`
+   before its `builder`, so gating from inside the builder is too late — the gate
+   has to sit above the router.
+2. *The redirect must be synchronous.* An `async` redirect that awaits the
+   profile leaves GoRouter with nothing to render while it resolves, which shows
+   as a black screen. The profile is therefore resolved before the router is
+   built, and the redirect reads it straight from the provider.
 
 Everything above without a phase marker exists today. The repositories and models
 land in Phases 2–3; the Phase 3+ entries are documented here so the pattern is
@@ -213,7 +241,9 @@ only retry path for a bad `.env` — a `ref.invalidate` instead of a restart.
 ```
 profiles
   id (uuid = auth.uid)  display_name  city  home_lat  home_lng
+  onboarded_at          -- null until the resource picker is finished
   created_at
+  -- created automatically by the on_auth_user_created trigger at signup
 
 resource_catalog
   id  slug  name  category  icon
@@ -409,10 +439,22 @@ least 12 activities; a second user cannot read the first user's rows.
 > *accepted* against them.
 
 **Phase 1 — Identity & inventory**
-Supabase auth (email + Google). Profile setup with city. "What do you already have?"
-resource picker.
-*Accept:* sign up, set city, select 5 resources, uninstall, reinstall, resources
-still there.
+Supabase auth (email). Profile setup. "What do you already have?" resource picker.
+*Accept:* sign up, save a profile, select 5 resources, uninstall, reinstall, sign
+in, resources still there.
+
+> **Google is deferred.** Only email is enabled. Adding Google later needs a
+> Google Cloud OAuth consent screen, an Android client keyed to the release
+> SHA-1, a web client ID pasted into Supabase, and a redirect entry in the
+> Android manifest — all free, all dashboard work. None of it is required to
+> prove identity and inventory work.
+>
+> **City is fixed to Bocaue**, not a free-text field: D1 scopes the MVP to one
+> municipality and retrieval has no data anywhere else. The original wording
+> said "set city"; the step now confirms it rather than asking.
+>
+> **Email confirmation is currently OFF** so signup logs straight in. It must go
+> back ON before real users, or unverified addresses can register.
 
 **Phase 2 — Retrieval, no AI**
 Bounding-box + budget + hours query. A crude non-AI plan builder picking the 3 nearest
