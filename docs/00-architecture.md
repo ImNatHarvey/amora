@@ -167,11 +167,14 @@ Revisit only if real usage shows people planning somewhere with no signal.
 
 ```
 lib/
-  main.dart                          -- boots the Supabase client, runs the app
+  main.dart                          -- runs the app; does no async work itself
   theme/
     app_theme.dart                   -- Material 3 ThemeData + Amora ThemeExtension
+    app_tokens.dart                  -- spacing, radius and budget-colour tokens
   app/
     router.dart                      -- GoRouter route table
+    startup.dart                     -- appStartupProvider + the gate that shows
+                                        loading/error/app while it runs
   data/
     supabase_client_provider.dart    -- the one Provider<SupabaseClient>
     places_repository.dart
@@ -183,15 +186,25 @@ lib/
     activity.dart
     plan.dart                        -- Phase 3+
   features/
-    plan_request/
+    home/
+      home_screen.dart               -- Phase 0 placeholder entry screen
+    dev/
+      token_gallery_screen.dart      -- /dev/tokens, the light/dark check surface
+    plan_request/                    -- Phase 2+
       plan_request_providers.dart
       plan_request_screen.dart
 ```
 
-Only `theme/app_theme.dart` and `main.dart` exist yet; the repositories and models
-land in Phases 0–2. The Phase 3+ entries are documented here so the pattern is
+Everything above without a phase marker exists today. The repositories and models
+land in Phases 2–3; the Phase 3+ entries are documented here so the pattern is
 decided once, not reinvented per phase — they are not implemented until their phase
 starts.
+
+**Startup is not awaited in `main()`.** `runApp` is called immediately and
+`appStartupProvider` performs `dotenv.load()` and `Supabase.initialize()` while the
+themed UI is already on screen. Awaiting it in `main()` held the first frame for
+~20 seconds on a cold emulator, showing a blank system splash. The gate is also the
+only retry path for a bad `.env` — a `ref.invalidate` instead of a restart.
 
 ---
 
@@ -429,6 +442,11 @@ user-added place does not appear in another account's generated plans.
 **Phase 6 — Completion & actuals**
 Mark complete. Photo (compressed to ~150 KB), caption, actual spend, actual fare,
 rating. Writes a `memory` and a `place_report`. Memory timeline screen.
+
+> `flutter_image_compress` was installed at Phase 0 and removed again: it applies
+> the Kotlin Gradle Plugin, which future Flutter versions refuse to build, and
+> nothing imported it. Re-add it when this phase starts — checking first whether
+> it has migrated to Built-in Kotlin, and picking an alternative if not.
 *Accept:* completing a plan produces a memory and updates price ground truth.
 
 --- MVP ends here. Ship it. Use it for a month before deciding anything else. ---
