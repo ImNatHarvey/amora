@@ -1,0 +1,436 @@
+# Amora — Architecture & Roadmap
+
+Status: v2 (Flutter) · Last updated: 2026-07-30
+
+---
+
+## 1. Decisions and why
+
+**D1 — One persona, one city.** Couples 18–28, Bocaue, Bulacan. A "for everyone"
+planner has no homepage, no onboarding, and no word of mouth. Revisit after 1,000
+weekly actives.
+
+> **Note — location changed from Angeles/Pampanga to Bocaue, Bulacan.** Nothing in
+> the schema or code depends on the specific city (`places.city` is a plain column,
+> every query is generic). What this does affect, since Phase 0 hasn't run yet: no
+> seed places or `transit_fares` rows exist to redo — Phase 0's seed-data step will
+> collect real Bocaue places and fares directly, targeting Bocaue from the start. The
+> 3 km default search radius in §9 was reasoned from a dense, tricycle-heavy city
+> center; Bocaue is a smaller, more suburban municipality near NLEX, so treat 3 km as
+> a starting point to confirm once real place density is known there, not a settled
+> number.
+
+**D2 — The product is aggregation, not generation.** Today this takes five tabs:
+Gemini for ideas, Maps for location, a Facebook page for real menu prices, Reddit for
+whether it's any good. Amora collapses that into one screen. That framing is why a
+chatbot can't replace it — a chatbot is only tab one.
+
+**D3 — The curated local database is the moat.** The first 200–300 places are entered
+by hand. This is unglamorous and it is the entire business.
+
+**D4 — Retrieval-grounded generation.** The model plans; the database supplies facts.
+See §7.
+
+**D5 — Fares are proprietary data.** No API knows what a tricycle from one barangay
+to another actually costs. Google doesn't. Gemini will hallucinate it. We store it,
+and verify it by riding one.
+
+**D6 — Editing is core, not a nicety.** AI output is a starting point. A plan you
+can't change is a slot machine.
+
+**D7 — Zero cost, no credit card.** Every service chosen passes both tests. Google
+Maps fails (billing account required) — hence `flutter_map`. Cloudflare R2 fails
+(payment method required) — hence Supabase Storage with hard compression.
+
+**D8 — Gemini over Claude for runtime.** Free API tier, and this task is composition
+over retrieved rows, not deep reasoning. The validation layer is model-agnostic;
+swapping later is a config change. Claude Code writes the app; Gemini runs inside it.
+
+**D9 — Migration workflow is CLI-style, files committed to git, not the dashboard.**
+See §6 for the full tradeoff.
+
+---
+
+## 2. Repository structure
+
+```
+amora/
+  CLAUDE.md                  -- working agreement, invariants, conventions
+  docs/
+    00-architecture.md       -- this file: decisions, data model, AI pipeline, phases
+    02-design-system.md      -- authoritative for anything visual
+  apps/
+    mobile/                  -- the Flutter app. Every `flutter` command runs from
+                                 here (e.g. `cd apps/mobile && flutter run`), never
+                                 from the repo root.
+    web/                     -- empty placeholder for the Phase 9 Next.js SEO site.
+                                 Nothing lives here until Phase 9 starts.
+  .claude/
+    settings.json             -- Claude Code session config
+```
+
+**Why `apps/`, not a single-package repo:** Amora is one product with two client
+surfaces on different timelines — the Flutter app now, a marketing/SEO site starting
+Phase 9. `apps/` keeps that boundary explicit without overcomplicating today's work:
+`apps/mobile` is the only directory with real code in it until Phase 9 begins.
+
+**What's deliberately not here:** no `apps/backend` — there is no separate backend
+service; business logic lives in Supabase Postgres (RLS, migrations) and Edge
+Functions per D7/D8. No `packages/` for shared code — nothing is shared between two
+real apps yet, since only one exists. Both existed on disk early in the project's
+life (before the CLAUDE.md architecture was settled) and were removed once confirmed
+to be dead scaffold with no code written against them.
+
+---
+
+## 3. Core stack
+
+Framework, language, state management, and styling — the four choices someone new to
+the project needs before reading anything else.
+
+| Layer | Choice | Version | Why |
+|---|---|---|---|
+| Framework | Flutter | 3.44.8 (stable channel) | One codebase now for Android, no rewrite needed to add iOS later; mature widget and rendering engine. |
+| Language | Dart | 3.12.2 | Flutter's native language — null-safe, statically typed, compiles to native ARM code for real device performance. |
+| State management | Riverpod | latest stable, pinned in `pubspec.lock` at Phase 0 | Compile-time-safe dependency injection and reactive state without `BuildContext` lookups; testable outside the widget tree; its `FutureProvider`/`AsyncNotifier` types match an app whose every screen waits on a Supabase call. |
+| Styling | Material 3 + `ThemeExtension` | ships with the Flutter SDK | Material 3 is a complete, accessible design system for free; `ThemeExtension` lets Amora add its own tokens (cost-emphasis colors, map-leg styles) without forking Material's theme model. |
+
+---
+
+## 4. Data fetching & API strategy
+
+Flutter never talks to Postgres or Gemini directly. Every request goes through one of
+two paths.
+
+**Path A — direct data** (reads/writes on `places`, `activities`, `profiles`, ...):
+`supabase_flutter` client → typed repository in `lib/data/` → Riverpod provider →
+widget.
+
+**Path B — AI generation:** Flutter → Supabase Edge Function
+(`supabase.functions.invoke(...)`) → a repository wrapper in `lib/data/` → Riverpod
+provider → widget. From the widget's point of view the Edge Function is just another
+repository dependency — nothing in the UI layer knows or cares that Gemini is
+involved.
+
+**Repository layer (`lib/data/`)**
+One repository per domain (`PlacesRepository`, `ActivitiesRepository`,
+`PlanGenerationRepository`, ...). Each repository:
+- holds a reference to the single app-wide `SupabaseClient`
+- exposes typed methods returning Dart models (`Place`, `Activity`, ...) — never a
+  raw `Map<String, dynamic>` or `PostgrestResponse`
+- catches Supabase's exceptions (`PostgrestException`, `AuthException`,
+  `FunctionException`) and rethrows one domain exception type (`RepositoryException`)
+  so callers only ever handle one error shape
+
+No widget calls `Supabase.instance.client` directly — that's CLAUDE.md's "no raw
+queries inside widgets" rule, and it's what makes swapping Gemini for another model
+later (D8) a config change instead of a rewrite.
+
+**Riverpod providers**
+Each repository gets a `Provider` (e.g. `placesRepositoryProvider`). Feature code
+never calls a repository directly — it goes through a `FutureProvider` or
+`AsyncNotifierProvider` that calls the repository and exposes `AsyncValue<T>`:
+
+```dart
+final nearbyPlacesProvider = FutureProvider.family<List<Place>, PlaceQuery>(
+  (ref, query) => ref.watch(placesRepositoryProvider).nearby(query),
+);
+```
+
+Widgets `ref.watch` these in `build()` and always handle all three states:
+
+```dart
+ref.watch(nearbyPlacesProvider(query)).when(
+  data: (places) => PlaceList(places),
+  loading: () => const CircularProgressIndicator(),
+  error: (e, _) => ErrorRetry(
+    onRetry: () => ref.invalidate(nearbyPlacesProvider(query)),
+  ),
+);
+```
+
+No widget owns a manual `isLoading` bool or wraps a repository call in `try`/`catch`
+— `AsyncValue` carries that state.
+
+**Offline behaviour**
+MVP has no offline mode. Every screen assumes connectivity; a failed request surfaces
+as `AsyncValue.error` with a retry action. This is a deliberate simplicity choice
+(boring over clever, D7's zero-infra spirit), not a stub — offline caching adds real
+complexity (conflict resolution, sync state) the "plan tonight" use case doesn't need.
+Revisit only if real usage shows people planning somewhere with no signal.
+
+**File structure**
+
+```
+lib/
+  main.dart                          -- boots the Supabase client, runs the app
+  theme/
+    app_theme.dart                   -- Material 3 ThemeData + Amora ThemeExtension
+  app/
+    router.dart                      -- GoRouter route table
+  data/
+    supabase_client_provider.dart    -- the one Provider<SupabaseClient>
+    places_repository.dart
+    activities_repository.dart
+    plan_generation_repository.dart  -- Phase 3+, wraps the Edge Function call
+    plans_repository.dart            -- Phase 3+
+  models/
+    place.dart
+    activity.dart
+    plan.dart                        -- Phase 3+
+  features/
+    plan_request/
+      plan_request_providers.dart
+      plan_request_screen.dart
+```
+
+Only `theme/app_theme.dart` and `main.dart` exist yet; the repositories and models
+land in Phases 0–2. The Phase 3+ entries are documented here so the pattern is
+decided once, not reinvented per phase — they are not implemented until their phase
+starts.
+
+---
+
+## 5. Data model
+
+```
+profiles
+  id (uuid = auth.uid)  display_name  city  home_lat  home_lng
+  created_at
+
+resource_catalog
+  id  name  category  icon
+  -- picnic mat, tent, bicycle, basketball, art supplies, console, board games...
+
+user_resources
+  id  user_id → profiles  resource_id → resource_catalog
+
+places
+  id  name  slug  category            -- cafe, park, viewpoint, florist, market...
+  lat  lng  address  barangay  city
+  opening_hours jsonb
+  price_min_php_cents  price_max_php_cents
+  indoor bool  sunset_facing bool
+  verification_tier                   -- 'curated' | 'user_submitted'
+  source                              -- 'owner' | 'user'
+  submitted_by_user_id  verified_at
+  is_partner bool  partner_tier int
+  social_url  contact_number  notes
+
+place_notes                           -- the "Reddit layer": lived experience
+  id  place_id  body  source_label  added_at
+
+activities
+  id  title  category
+  min_budget_php_cents  max_budget_php_cents
+  duration_minutes  required_resource_ids uuid[]
+  weather_dependent bool  is_diy bool
+  tutorial_url                        -- one hand-picked video, Tagalog preferred
+
+transit_fares
+  id  from_area  to_area  mode  fare_php_cents  verified_at
+
+plans
+  id  user_id  title  budget_php_cents  companion_type  occasion
+  planned_for timestamptz
+  status                              -- 'draft' | 'active' | 'completed'
+  origin                              -- 'generated' | 'manual'
+  generated_by_model  created_at
+
+plan_items
+  id  plan_id  seq  activity_id  place_id
+  start_time  duration_minutes  est_cost_php_cents  note
+
+plan_legs
+  id  plan_id  from_item_id  to_item_id  seq
+  mode                                -- 'walk'|'tricycle'|'jeepney'|'bus'|'drive'
+  distance_m  duration_min  fare_php_cents
+
+plan_edits                            -- product-quality telemetry
+  id  plan_id  user_id  edit_type     -- 'add'|'remove'|'reorder'|'retime'|'swap'
+  target_item_id  created_at
+
+memories
+  id  plan_id  user_id  photo_path  caption
+  actual_spend_php_cents  rating  created_at
+
+place_reports                         -- crowdsourced price truth
+  id  place_id  user_id  reported_cost_php_cents  still_open bool  note
+
+plan_cache
+  id  constraint_hash  payload jsonb  hit_count  created_at
+
+placement_events
+  id  place_id  plan_id  event_type   -- 'impression'|'click'|'completed'
+  created_at
+```
+
+**Indexes:** btree on `places(city, price_min_php_cents)`, btree on `places(lat, lng)`,
+btree on `plan_cache(constraint_hash)`, btree on `plan_items(plan_id, seq)`.
+
+**RLS:** every table, from its creating migration. `places`, `activities`,
+`transit_fares`, and `resource_catalog` are world-readable but insert/update only by
+the owner role. Everything user-scoped is readable only by its owner.
+
+**Phasing note:** this is the full target schema, but no single migration creates all
+of it — each phase's migration adds only the tables that phase needs (`profiles`,
+`resource_catalog`, `user_resources`, `places`, `place_notes`, `activities`,
+`transit_fares` in Phase 0; `plans`/`plan_items`/`plan_legs`/`plan_cache` in Phase 3;
+`plan_edits` in Phase 5; `memories`/`place_reports` in Phase 6;
+`placement_events`/`is_partner`/`partner_tier` in Phase 10). Same "one phase at a
+time" discipline CLAUDE.md applies to app code, applied to the database.
+
+---
+
+## 6. Migration workflow
+
+**Decision: Supabase CLI-style migrations, files committed to git — not the
+dashboard SQL editor.**
+
+| | Dashboard SQL editor | Migration files in git (chosen) |
+|---|---|---|
+| History | None — the dashboard shows current state only, not how it got there | Every change is a numbered `.sql` file in `supabase/migrations/`, in git, with a commit message |
+| Rebuild from scratch | Hard — schema has to be reconstructed by hand from whatever the dashboard currently shows | Trivial — replay the migration files against a fresh project in order |
+| Mistake recovery | A bad statement run in the dashboard can silently corrupt schema with nothing to diff against | A bad migration is a git diff, revertible like any other code change |
+| Setup cost | None | Low — authoring and applying migrations needs no local Postgres/Docker; that's only required for the *full* local dev stack (`supabase start`), which isn't needed yet |
+
+For a solo developer who explicitly wants to rebuild the database from scratch if it
+breaks, the dashboard editor fails the one requirement that matters — it has no
+memory of how the schema got to its current state. Migration files are exactly a
+"rebuild from scratch" button: replaying them against a new project reconstructs the
+schema byte-for-byte.
+
+**How this runs in practice:** schema changes are written as `.sql` files in
+`supabase/migrations/<timestamp>_<name>.sql` and committed to git first — that file
+is the source of truth. They're applied to the live project either via the Supabase
+CLI (`supabase db push`) or, inside a Claude Code session, via the `apply_migration`
+MCP tool — either way, the `.sql` file exists and is committed before or alongside
+the apply. The dashboard SQL editor is fine for one-off read queries during manual
+verification (`select count(*) from places`), but never for changing schema.
+
+---
+
+## 7. AI pipeline
+
+```
+1. INTAKE      { budget_cents, window_start, window_end, origin_lat, origin_lng,
+                 companion_type, occasion, owned_resource_ids[], mobility }
+
+2. CACHE       hash rounded constraints (budget → nearest 50, location → ~500m grid,
+               time → morning/afternoon/evening, owned_resource_ids → sorted
+               fingerprint, occasion → coarse bucket). Hit? return stored payload.
+               This is the primary cost control — most requests repeat.
+
+3. RETRIEVE    places WHERE city = ? AND verification_tier = 'curated'
+                 AND price_min <= budget AND open during window
+                 AND (indoor IF rain) AND within bounding box
+               activities WHERE budget fits
+                 AND required_resource_ids ⊆ owned_resource_ids
+               → 20–40 candidate rows
+
+4. COMPOSE     Gemini Flash, responseMimeType application/json + responseSchema.
+               Prompt contains ONLY candidate rows.
+               Returns 3 plans as sequences of {activity_id, place_id, start_time,
+               duration_minutes, note}.
+
+5. VALIDATE    Reject any ID outside the candidate set → retry once → else fail.
+               Server computes: haversine distance per leg, mode by distance
+               (<800m walk, else transit_fares lookup), and all totals.
+
+6. RANK        Among valid plans, partner places may break ties only.
+               Log placement_events for every place surfaced.
+
+7. RENDER      Map with numbered stops, dashed walk legs, solid ride legs,
+               per-leg fares, and a vertical timeline below.
+```
+
+Runs in a Supabase Edge Function. The Gemini key never reaches the device.
+
+---
+
+## 8. Phases
+
+Each ends with a stop-and-review gate and one Git commit.
+
+**Phase 0 — Foundation**
+Repo hygiene, `.env` + gitignore, Supabase project, schema migration for Phase 0–2
+tables only (see §5's phasing note), RLS policies, Material 3 theme with
+ThemeExtension, GoRouter shell. Seed 50 verified places and 40 activities from a CSV
+import.
+*Accept:* app boots on a real device; `select count(*) from places` returns 50; a
+second user cannot read the first user's rows.
+
+**Phase 1 — Identity & inventory**
+Supabase auth (email + Google). Profile setup with city. "What do you already have?"
+resource picker.
+*Accept:* sign up, set city, select 5 resources, uninstall, reinstall, resources
+still there.
+
+**Phase 2 — Retrieval, no AI**
+Bounding-box + budget + hours query. A crude non-AI plan builder picking the 3 nearest
+budget-fitting places. Haversine distances, fare lookup, cost totals. A minimal
+plain-text (no map, no styling) list screen renders the results — enough to satisfy
+the "runs on a real device" rule before Phase 4's real UI exists.
+*Accept:* ₱200 + a location returns real, currently-open places within 5 km in under
+400 ms. **This phase proves the moat before any AI is involved. If the output here
+isn't useful, the AI won't save it.**
+
+**Phase 3 — Gemini generation**
+Edge function, `responseSchema`, validation layer, rejection logging, plan_cache.
+*Accept:* 20 consecutive generations produce zero invalid IDs; every total matches an
+independent SQL recomputation exactly; second identical request is a cache hit.
+
+**Phase 4 — Plan experience**
+`flutter_map` with numbered stops, dashed walk legs, solid ride legs, per-leg fares,
+vertical timeline, cost breakdown, save.
+*Accept:* generate, save, reopen, and read a plan while walking around.
+
+**Phase 5 — Editing**
+Reorder, remove, retime, add a custom stop. Legs and totals recompute. `plan_edits`
+logged. User-added places land quarantined.
+*Accept:* take a generated plan, make three edits, totals stay correct, and a
+user-added place does not appear in another account's generated plans.
+
+**Phase 6 — Completion & actuals**
+Mark complete. Photo (compressed to ~150 KB), caption, actual spend, actual fare,
+rating. Writes a `memory` and a `place_report`. Memory timeline screen.
+*Accept:* completing a plan produces a memory and updates price ground truth.
+
+--- MVP ends here. Ship it. Use it for a month before deciding anything else. ---
+
+**Phase 7 — Community** (publish completed plans, browse by budget, "tried this")
+**Phase 8 — Weather-aware replanning**
+**Phase 9 — Next.js SEO site**
+**Phase 10 — Local business placements**
+
+---
+
+## 9. Resolved decisions
+
+These were open questions in the previous version of this doc. Each is now decided,
+with a one-line rationale so the reasoning survives past this session.
+
+**Default search radius — 3 km, auto-widening to 5 km if too few candidates.**
+A couple without a car is walking or taking short tricycle hops; defaulting wide
+risks 15–20 minute rides between stops on a "plan tonight" trip. Narrow-then-widen
+beats wide-then-hope. *Needs re-confirming against real Bocaue place density once
+Phase 0 seed data exists — see the note under D1.*
+
+**₱0 plans are just budget = 0, not a separate entry point.**
+A separate "free date" flow would imply ₱0 is a lesser product, which contradicts the
+stated "budget-agnostic, never shame the user" principle. Same retrieval and
+composition path, same UI, one slider that allows zero.
+
+**Re-verifying a place is still open — crowdsourced signal, no built automation.**
+`place_reports.still_open` (Phase 6) is the passive signal, checked manually via a
+Supabase SQL query when reports accumulate. At 50–300 curated rows, a scheduled
+recheck job would be over-engineering for the dataset size.
+
+**Plan cache — shared across users, but the hash key must include a resource
+fingerprint and a coarse occasion bucket, not just budget/location/time.**
+Retrieval filters activities by `required_resource_ids ⊆ owned_resource_ids`; without
+a resource fingerprint in the cache key, two users sharing a budget/location/time
+bucket but owning different equipment could collide and receive a plan requiring gear
+they don't have. Occasion needs a coarse bucket (casual/special, not free text) for
+the same reason. `companion_type` doesn't need to vary yet — MVP is single-persona
+(couples only).
