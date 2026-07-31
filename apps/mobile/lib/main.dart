@@ -1,15 +1,48 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'app/router.dart';
+import 'data/supabase_client_provider.dart';
 import 'theme/app_theme.dart';
+import 'theme/app_tokens.dart';
 
-void main() {
-  runApp(const MyApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await initialiseSupabase();
+  } catch (error) {
+    // A misconfigured .env is a setup mistake, not a runtime failure to retry.
+    // Show what is wrong instead of crashing to a blank screen.
+    runApp(StartupErrorApp(message: '$error'));
+    return;
+  }
+
+  runApp(const ProviderScope(child: AmoraApp()));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class AmoraApp extends StatelessWidget {
+  const AmoraApp({super.key});
 
-  // This widget is the root of your application.
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      title: 'Amora',
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.system,
+      routerConfig: router,
+    );
+  }
+}
+
+/// Shown when the app cannot start at all — currently only a missing or
+/// incomplete `.env`.
+class StartupErrorApp extends StatelessWidget {
+  const StartupErrorApp({required this.message, super.key});
+
+  final String message;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -17,54 +50,31 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
-}
+      home: Builder(
+        builder: (context) {
+          final theme = Theme.of(context);
+          final tokens = theme.tokens;
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
+          return Scaffold(
+            body: SafeArea(
+              child: Padding(
+                padding: EdgeInsets.all(tokens.md),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Amora could not start',
+                      style: theme.textTheme.headlineSmall,
+                    ),
+                    SizedBox(height: tokens.sm),
+                    Text(message, style: theme.textTheme.bodyLarge),
+                  ],
+                ),
+              ),
             ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+          );
+        },
       ),
     );
   }

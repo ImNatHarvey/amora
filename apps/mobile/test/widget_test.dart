@@ -1,30 +1,58 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:mobile/main.dart';
+import 'package:mobile/theme/app_tokens.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('boots to the home route', (tester) async {
+    await tester.pumpWidget(const ProviderScope(child: AmoraApp()));
+    await tester.pumpAndSettle();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('Amora'), findsOneWidget);
+    expect(find.text('View design tokens'), findsOneWidget);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  testWidgets('navigates to the token gallery and back', (tester) async {
+    await tester.pumpWidget(const ProviderScope(child: AmoraApp()));
+    await tester.pumpAndSettle();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.tap(find.text('View design tokens'));
+    await tester.pumpAndSettle();
+    expect(find.text('Design tokens'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('View design tokens'), findsOneWidget);
+  });
+
+  testWidgets('exposes Amora tokens through the theme', (tester) async {
+    late AmoraTokens tokens;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          extensions: [
+            AmoraTokens.fromColorScheme(
+              ColorScheme.fromSeed(seedColor: const Color(0xFFB4436C)),
+            ),
+          ],
+        ),
+        home: Builder(
+          builder: (context) {
+            tokens = Theme.of(context).tokens;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    // The 4pt scale from docs/02-design-system.md §4.
+    expect(tokens.xs, 4);
+    expect(tokens.sm, 8);
+    expect(tokens.md, 16);
+    expect(tokens.lg, 24);
+    expect(tokens.xl, 32);
+    expect(tokens.xxl, 48);
   });
 }
