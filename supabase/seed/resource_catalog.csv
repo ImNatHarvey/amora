@@ -1,0 +1,31 @@
+slug,name,category,icon
+picnic-mat,Picnic mat,outdoor,deck
+tent,Tent,outdoor,cabin
+camping-gear,Camping gear,outdoor,camping
+folding-chairs,Folding chairs,outdoor,chair
+cooler,Cooler or ice box,outdoor,kitchen
+flashlight,Flashlight,outdoor,flashlight_on
+cooking-ingredients,Cooking ingredients,kitchen,egg
+kitchen-appliances,Kitchen appliances,kitchen,blender
+grill,Grill or griller,kitchen,outdoor_grill
+baking-tools,Baking tools,kitchen,cake
+art-materials,Art materials,craft,palette
+colored-paper,Colored paper,craft,description
+glue-and-scissors,Glue and scissors,craft,content_cut
+markers-and-pens,Markers and pens,craft,edit
+wrapping-paper,Wrapping paper,craft,redeem
+printer,Printer,craft,print
+instant-camera,Instant camera,craft,photo_camera
+basketball,Basketball,sports,sports_basketball
+badminton-set,Badminton set,sports,sports_tennis
+volleyball,Volleyball,sports,sports_volleyball
+yoga-mat,Yoga mat,sports,self_improvement
+board-games,Board games,games,casino
+playing-cards,Playing cards,games,style
+books,Books,games,menu_book
+gaming-console,Gaming console,games,sports_esports
+bluetooth-speaker,Bluetooth speaker,tech,speaker
+projector,Projector,tech,cast
+bicycle,Bicycle,transport,pedal_bike
+motorcycle,Motorcycle,transport,two_wheeler
+car,Car,transport,directions_car
