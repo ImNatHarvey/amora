@@ -1,0 +1,17 @@
+# Secrets
+.env
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.iml
+
+# Flutter/Dart (repo-wide backstop; apps/mobile/.gitignore has the full list)
+.dart_tool/
+.flutter-plugins-dependencies
+/build/
