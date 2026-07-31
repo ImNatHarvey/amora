@@ -40,6 +40,17 @@ and must never read as decoration (see the rules below). It also holds up agains
 the greens and browns of outdoor photography, which is where most of the colour on
 screen actually comes from.
 
+> **Known issue — primary and error converge in dark mode.** In light mode the two
+> are far apart (`primary #8C4A5F` against `error #BA1A1A`). Material 3 lightens
+> both for the dark scheme and they end up neighbours: `primary #FFB1C6` against
+> `error #FFB4AB`, differing by ~27/255 on one channel alone. Verified on device.
+> Nothing renders money yet, so nothing is broken today, but "over budget" must not
+> read as a decorative accent. **Resolve before Phase 4 builds the cost breakdown**
+> — either override `error` in the dark scheme toward orange-red, or carry the
+> over-budget state with an icon or label rather than colour alone. Colour should
+> not be the only channel for that meaning regardless, since it also fails for
+> red-green colourblind users.
+
 **Generation:** the full Material 3 tonal range is derived at runtime by
 `ColorScheme.fromSeed` in `lib/theme/app_theme.dart` — the same algorithm the
 Material Theme Builder runs, with no generated file to keep in sync. Changing the
