@@ -200,22 +200,23 @@ lib/
     router.dart                      -- GoRouter route table + redirect ladder
     auth_refresh.dart                -- Listenable that re-runs the redirect
     startup.dart                     -- appStartupProvider + splash/failure
-  models/
-    profile.dart
-    resource.dart
+  util/
+    manila_time.dart                 -- UTC <-> Asia/Manila, a fixed +8 offset
   data/
     supabase_client_provider.dart    -- the one Provider<SupabaseClient>
     repository_exception.dart        -- the single error type repositories throw
     auth_repository.dart
     profiles_repository.dart
     resources_repository.dart
-    places_repository.dart           -- Phase 2
-    activities_repository.dart       -- Phase 2
+    retrieval_repository.dart        -- Phase 2, wraps the retrieval RPCs
     plan_generation_repository.dart  -- Phase 3+, wraps the Edge Function call
     plans_repository.dart            -- Phase 3+
   models/
-    place.dart
-    activity.dart
+    profile.dart
+    resource.dart
+    place.dart                       -- Phase 2
+    activity.dart                    -- Phase 2
+    simple_plan.dart                 -- Phase 2, the non-AI builder's output
     plan.dart                        -- Phase 3+
   features/
     home/
@@ -252,6 +253,40 @@ Everything above without a phase marker exists today. The repositories and model
 land in Phases 2–3; the Phase 3+ entries are documented here so the pattern is
 decided once, not reinvented per phase — they are not implemented until their phase
 starts.
+
+> **One repository per domain has an exception: retrieval.** This listing used to
+> name `places_repository.dart` and `activities_repository.dart`. Phase 2 replaced
+> both with a single `retrieval_repository.dart`, because retrieval turned out to
+> be one server call returning one composed answer rather than two tables to query
+> and join on the device (§4a). A `PlacesRepository` with no caller would have been
+> scaffolding, and CLAUDE.md forbids preparing for a phase that has not started.
+> Split them the day something genuinely needs to read places on their own.
+
+### 4a. Where retrieval logic lives
+
+**Retrieval, distance, fares and totals are Postgres functions, not Dart.** The app
+calls `public.build_simple_plan` through `client.rpc(...)` and renders what comes
+back.
+
+Two reasons, in order of importance:
+
+1. **Invariant 3 says costs are computed server-side.** Money arithmetic on the
+   device is arithmetic that a future client, a cache, or a bug can disagree with.
+   One implementation, in the database, next to the rows it sums.
+2. **Phase 3 calls the same functions.** The Edge Function builds its Gemini
+   candidate set with `retrieve_candidates` and validates and costs the model's
+   answer with `fare_for` and `haversine_m` — the exact functions the Phase 2
+   screen already exercises. What the user sees and what the model is given are the
+   same rows by construction, not by two implementations agreeing.
+
+The seam is deliberate: `build_simple_plan` is the crude nearest-first composer and
+is the *only* thing Gemini replaces. Everything under it survives Phase 3 untouched.
+
+`is_open_at` deserves its own note. `opening_hours` ranges may close earlier than
+they open, which means the place shuts after midnight — `fri 20:00-02:00` runs into
+Saturday. A naive `open <= t < close` test reads those as never open, which would
+silently delete exactly the rows an evening-planning app exists to surface. The
+function checks each day's own ranges plus the previous day's wrapping ones.
 
 **Startup is not awaited in `main()`.** `runApp` is called immediately and
 `appStartupProvider` performs `dotenv.load()` and `Supabase.initialize()` while the
@@ -503,14 +538,36 @@ in, resources still there.
 > place is the 6-character minimum enforced both by Supabase and by the sign-up
 > form. Revisit only if the project ever moves off the free tier.
 
-**Phase 2 — Retrieval, no AI**
-Bounding-box + budget + hours query. A crude non-AI plan builder picking the 3 nearest
+**Phase 2 — Retrieval, no AI — ⚠️ BUILT, NOT YET ACCEPTED**
+Radius + budget + hours query. A crude non-AI plan builder picking the 3 nearest
 budget-fitting places. Haversine distances, fare lookup, cost totals. A minimal
 plain-text (no map, no styling) list screen renders the results — enough to satisfy
 the "runs on the physical device" rule before Phase 4's real UI exists.
 *Accept:* ₱200 + a location returns real, currently-open places within 5 km in under
 400 ms. **This phase proves the moat before any AI is involved. If the output here
 isn't useful, the AI won't save it.**
+
+> **"Under 400 ms" means server execution time.** Measured at 11.9 ms on the seed
+> data. End-to-end from the device also carries a Manila↔Tokyo round trip, which
+> nothing in this phase can reduce; the screen shows the round-trip figure so both
+> are visible, but only the server half is the criterion.
+>
+> **Origin is a barangay picker, not GPS.** `transit_fares` is keyed by barangay,
+> so a GPS coordinate would have to be resolved to one before any leg could be
+> costed. The coordinate comes from `origin_areas`, which returns the centroid of
+> the curated places in each barangay — derived from real rows, never typed from
+> memory. `profiles.home_lat`/`home_lng` stay unwritten until Phase 4 adds GPS
+> alongside the map. A barangay with no curated places cannot yet be an origin.
+>
+> **A leg with no recorded fare is shown as unpriced and left out of the total**,
+> which is then labelled "at least ₱X" rather than "total". Estimating it from
+> distance would be exactly the invented local data D5 exists to forbid. Two places
+> in the same barangay more than 800 m apart currently report unpriced — no
+> intra-barangay fare has been recorded. That gap is real and should stay visible.
+>
+> **Acceptance is blocked on seed data, not code**, and deliberately so: building
+> first established which fields the fieldwork actually needs. See the Phase 0 open
+> debt above.
 
 **Phase 3 — Gemini generation**
 Edge function, `responseSchema`, validation layer, rejection logging, plan_cache.
@@ -562,6 +619,24 @@ Phase 0 seed data exists — see the note under D1.*
 A separate "free date" flow would imply ₱0 is a lesser product, which contradicts the
 stated "budget-agnostic, never shame the user" principle. Same retrieval and
 composition path, same UI, one slider that allows zero.
+
+**Intra-barangay fares — collect the rows; never widen the walk threshold.**
+Two places in one barangay more than 800 m apart had no fare, and in a walkable
+town that is the *most common* leg the builder generates. Three options were
+weighed. Widening the walk threshold for same-barangay legs was rejected outright:
+it would print "walk · free" for a ride people actually pay for, understating the
+total while looking complete — a confident wrong number, which is worse than an
+admitted gap and the same failure as estimating a fare. Leaving it to the "at
+least ₱X" label was rejected as a standalone answer: if most plans are hedged, the
+hedge stops carrying information. So `transit_fares` gains same-barangay rows
+(`Poblacion → Poblacion, tricycle, ...`), which need **no schema change** —
+nothing forbids `from_area = to_area` and `fare_for` already matches symmetrically.
+Distance ridden is noted during verification, because a flat minimum fare makes
+one row per barangay permanently correct, while distance-dependent pricing would
+mean the barangay-pair key is the wrong granularity. *Held in reserve:* municipal
+tricycle tariffs are usually posted at the terminal, and a photographed local rate
+is curated data rather than estimation — reach for it only if ride data shows
+fares varying with distance inside one barangay.
 
 **Re-verifying a place is still open — crowdsourced signal, no built automation.**
 `place_reports.still_open` (Phase 6) is the passive signal, checked manually via a
