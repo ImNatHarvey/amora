@@ -2,6 +2,10 @@
 .env
 .claude/settings.local.json
 
+# Generated seed SQL. The CSVs in supabase/seed/ are the source of truth
+# (docs/00-architecture.md §6); this is disposable output of csv_to_sql.mjs.
+seed.sql
+
 # OS
 .DS_Store
 Thumbs.db

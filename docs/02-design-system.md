@@ -40,6 +40,14 @@ and must never read as decoration (see the rules below). It also holds up agains
 the greens and browns of outdoor photography, which is where most of the colour on
 screen actually comes from.
 
+> **This justification has a shelf life.** "Because the users are couples" stops
+> being a reason the moment friends and families arrive (`00-architecture.md`
+> §11). The colour itself is fine and should stay — deep rose is warm and
+> grounded, which is the brief regardless of who is planning. But the *reason*
+> needs restating as a brand choice before the persona widens, or the first person
+> to read this after Phase 7 will correctly conclude the palette is now wrong and
+> propose a redesign nobody needs.
+
 > **Known issue — primary and error converge in dark mode.** In light mode the two
 > are far apart (`primary #8C4A5F` against `error #BA1A1A`). Material 3 lightens
 > both for the dark scheme and they end up neighbours: `primary #FFB1C6` against
@@ -76,6 +84,31 @@ Money needs consistent meaning across the app:
 | Normal cost | `onSurface` |
 | Over budget | `error` |
 | Partner / sponsored place | no colour treatment; a small text label only |
+
+**"Free" is for prices, not for addends.** ₱0 reads as "free" wherever it is the
+price of something — a place, a leg, a plan total. It reads as `₱0` wherever it is
+one line of a breakdown or a constraint echoed back, because "places ₱200 · fares
+free" describes a category rather than an amount. Learned on device; enforced by
+tests in `plan_request_test.dart`.
+
+**Money is per person; totals are for the party.** A price shown against a place
+is what one person spends. A total is what the outing costs. Never show a
+per-person figure where a user expects the total — the budget they typed meant the
+whole date (`00-architecture.md` §9).
+
+### Provenance of a price
+
+From Phase 6b a price may be community-corrected, and the user must be able to
+tell which they are looking at:
+
+| Source | Label |
+|---|---|
+| Hand-verified seed | `₱180 · verified` |
+| Community-corrected | `₱180 · reported by 4 people` |
+
+No colour treatment for either — this is information, not a warning. Hiding the
+difference would make the catalogue's weakest rows look identical to its
+strongest, which is the one thing the whole verification model exists to prevent.
 
 That last row matters. A sponsored place must never be visually louder than an
 organic one. See invariant 4 in `CLAUDE.md`.
@@ -141,9 +174,71 @@ The number is the link between map and timeline — same number, same colour, al
 Mode icon, distance or duration, fare. Walking legs show "Free", not a blank or a
 dash. Dashed divider for walking, solid for paid transit — mirrors the map exactly.
 
+> **Do not bake "exactly one mode per leg" into this component's API.** Render a
+> leg from a list of segments that today always has length one. A day trip out of
+> Bocaue is a bus, then an MRT ride, then a jeep — three fares in one leg — and
+> that arrives as an additive `plan_leg_segments` table (`00-architecture.md`
+> §12.3). Taking the list now costs nothing and saves rewriting the component
+> later; assuming a single mode is the one decision here that would be expensive
+> to undo.
+
 **Budget input**
 Large, centred, unmissable. This is the primary input of the entire product and
 should feel like the main event on its screen, not a form field.
+
+> Intake became conversational (`00-architecture.md` D10), so this is now the
+> **structured surface beneath the chat** rather than the first thing a user
+> sees — and it is what a budget *constraint chip* expands into when tapped. The
+> rule survives the change: wherever a budget is entered, it is the main event on
+> that surface, never a cramped field in a row of others.
+
+**Conversation thread**
+The intake surface. Plain message rows, not bubbles-in-boxes — user text aligned
+one way, Amora's the other, generous vertical rhythm per §4. No avatars, no
+persona illustration, no name label: Amora is not a character, and giving it a
+face invites users to ask it things the database cannot answer.
+
+**No typing-indicator theatre.** Show a real progress state while a request is in
+flight, and nothing at all otherwise. §6 forbids animating for delight, and a
+simulated "thinking" pause is the purest form of that — it spends frames on
+mid-range Android to make the product feel slower than it is.
+
+**Constraint chip** (the component that makes the agent trustworthy)
+The extracted constraints — budget, time, starting barangay, what you own —
+rendered as chips above the plan, each one tappable to correct.
+
+This is the most important new component in the app, because it is what stops
+conversation becoming guesswork the user cannot see. The model's reading of a
+request is always **shown, never assumed.** A chip must read as *editable* — it
+carries a value the user can change, not a pronouncement the system has made. Use
+the `small` radius and an affordance that says "tap me", and never render a chip
+in a state the user cannot reach and fix.
+
+A constraint the model could not determine appears as an **unfilled** chip
+prompting for it ("How much?"), not as a silent default. A wrong assumption the
+user can see and fix costs a tap; a wrong assumption hidden behind confident
+prose costs their evening.
+
+**Starter chips**
+The empty state of the conversation thread: two or three concrete openers
+("Tonight", "This weekend", "Under ₱200"). They solve the blank page, and a
+tapped chip is already a structured value — it skips extraction entirely
+(`00-architecture.md` §7 step 0), so the friendliest path is also the cheapest.
+
+Consistent with the existing empty-state rule below: never present an empty
+thread with nothing to press.
+
+**Community list** (Phase 7 — a filtered list, never a feed)
+Published plans, ranked by **budget fit**, never by recency. Cards are
+photo-forward like the plan card, but the sort order is a query result, not a
+timeline. No follower graph, no like counts, no comment threads — all already on
+CLAUDE.md's not-building list, and all of them are what would turn this into a
+vanity feed.
+
+The reason is not taste: **ranking specifies behaviour.** Rank by recency and
+photos and people optimise for photos, which costs the structured budget data that
+makes a shared plan worth more than a picture. Rank by budget fit and accurate
+budgets are what get rewarded. `00-architecture.md` §9 carries the full argument.
 
 **Empty states**
 Never a bare "No results." Always explain and offer an action: "No plans under ₱100
@@ -198,6 +293,11 @@ When referencing, be specific about what to take — "the card density from this
 - [ ] Text scales correctly at 1.3× system font size without clipping
 - [ ] Loading, empty, and error states all exist
 - [ ] Peso amounts follow the budget colour semantics above
+- [ ] Any extracted or inferred value is shown to the user and is correctable —
+      never applied silently
+- [ ] Embedded media loads lazily and has a visible fallback. A webview player is
+      the heaviest thing in the app; it must not load until tapped, and an
+      embed-disabled video must offer "open in YouTube" rather than an error
 
 9. Primary UI reference: Brilliant (iOS)
 
@@ -243,9 +343,12 @@ Plan card list — card density, spacing rhythm, cost prominence
 Budget input — single-purpose screen, large friendly input, lots of air
 Resource picker — chip grid, playful but legible selection states
 Memory timeline — photo-forward cards, generous vertical spacing
+Conversation thread — generous whitespace and short lines matter more here than anywhere; a cramped chat reads as a support widget, not a planner
 Screens where it does not
 
 Plan detail with map and timeline. Brilliant has no equivalent. Reference Google Maps directions instead: numbered stops, per-leg mode and cost, a scannable vertical list beneath the map.
+
+**The conversation stops at the itinerary.** Intake is a chat; the plan is not. Once constraints resolve, the result is a card, a map and a timeline — a document the user reads, keeps and walks around with, not a message they scroll back through. Place detail and embedded tutorials (Phase 4) open from a stop, and never as chat turns. Anything that would make the plan itself feel like a transcript is wrong.
 
 Storage
 

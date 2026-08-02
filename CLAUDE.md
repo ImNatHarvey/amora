@@ -2,10 +2,15 @@
 
 ## What this is
 
-Amora replaces five tabs with one answer. A user tells us their budget, who they're
-with, where they are, and what they already own. We return three complete, costed,
-mappable plans — real local places, real prices, real jeepney and tricycle fares.
-Then they edit it to fit their life, go do it, and record what actually happened.
+Amora replaces five tabs with one answer. A user says what they want in their own
+words — their budget, who they're with, where they are, what they already own. We
+read that into constraints, show them back so they can be corrected, and return
+three complete, costed, mappable plans — real local places, real prices, real
+jeepney and tricycle fares. Then they edit it to fit their life, go do it, and
+record what actually happened.
+
+**The conversation is the intake, not the answer.** The model reads the request
+and never sources a fact in it. See `docs/00-architecture.md` D2 and D10.
 
 **MVP: couples aged 18–28, Bocaue, Bulacan only, one job — "plan tonight or this
 weekend, under ₱X, with what we already have."**
@@ -67,6 +72,13 @@ Cloudflare R2 (requires a card), any paid API, any service requiring a credit ca
 This project must cost ₱0 to build and run. If a task seems to need a paid service,
 stop and tell me — there is always a free path, or the feature waits.
 
+**Web search may produce candidates, never rows.** Search — including AI-assisted
+search over Reddit, Facebook or YouTube — is a research aid for finding places
+worth walking to. Its output goes in `supabase/seed/candidates/`, never in
+`places.csv`. Agreement across sources measures copying, not truth, and it cannot
+detect a change younger than the corpus. A `curated` row means a person stood at
+the door. Full reasoning: `docs/00-architecture.md` §10.4.
+
 Note: shadcn/ui, MagicUI, and Impeccable are web-only. They are reserved for the
 phase-9 Next.js site and must never be referenced in Flutter work.
 
@@ -82,11 +94,25 @@ Gemini composes plans from **retrieved candidates only**. It receives a list of 
 IDs and activity IDs and may reference only those. It never produces a place name,
 address, price, fare, or opening time from its own knowledge.
 
+**This binds the extraction call too.** Reading a user's request into constraints
+(`docs/00-architecture.md` §7 step 0) is a second Gemini call that receives no
+candidates at all — so it may emit **constraint values only**: a budget, a time, a
+barangay, an occasion bucket. It must never emit a place or activity name, and a
+user naming somewhere we have no row for ("take me to that café on the highway")
+resolves to a constraint or a question, never to a suggestion. A conversational
+intake widens what the user may *say*; it widens nothing about what we may
+*claim*.
+
 ### 2. The server validates every generated plan
 
 Reject any `place_id` or `activity_id` outside the candidate set. Retry once with a
 corrective message, then fail loudly. Never render an unvalidated plan. Log every
 rejection.
+
+Extraction output is validated on the same principle: a budget must parse to an
+integer, an origin must match a known barangay, a time must resolve to an instant.
+Anything that fails is asked about, never guessed — and is shown to the user as a
+correctable chip either way.
 
 ### 3. The model does no arithmetic
 
@@ -119,6 +145,12 @@ delete the same suggested stop, that recommendation is bad and I need to know.
 ## Conventions
 
 - Money is integer centavos (`_php_cents`). Never floats, never doubles.
+- **Money is per person.** `places.price_min_php_cents` is what *one* person
+  spends; the same for `activities` budgets. Totals multiply by `party_size` (2
+  while D1 holds). Fares are the exception that proves it: a jeepney charges each
+  passenger, a tricycle special trip charges once for the vehicle, so
+  `transit_fares.is_per_person` decides. The user's budget always means the whole
+  outing — ₱200 for the date, not each. See `docs/00-architecture.md` §9.
 - Distances in metres, durations in minutes, both integers.
 - Times stored UTC, displayed `Asia/Manila`.
 - All Supabase access goes through a typed repository layer in `lib/data/`.
@@ -161,8 +193,14 @@ there and leave `HANDOFF.md` short. Target one page.
 Do not scaffold, stub, or "prepare for" any of these:
 
 worldwide · multi-language · multi-currency · flights · hotels · reservations ·
-ride-hailing · voice AI · wearables · Android Auto · CarPlay · real-time collaboration ·
-community feed · comments · direct messages · follower graphs · merchant dashboard ·
-billing · iOS · families and solo personas
+multi-day trip planning · ride-hailing · voice AI · wearables · Android Auto ·
+CarPlay · real-time collaboration · community feed · comments · direct messages ·
+follower graphs · merchant dashboard · billing · iOS · families and solo personas
 
 If I ask for one of these before its phase, remind me of this list.
+
+**The line, when something sounds close to in-scope:** Amora plans *time within a
+place you are already in*. Planning *movement between places you are not in yet*
+is a different product — see `docs/00-architecture.md` §12, which works through
+the cases and says why the moat is worth nothing on the far side of that line.
+"Day 3 in Manila with ₱500" is Amora. "Plan my Cebu trip" is not.

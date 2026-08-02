@@ -22,6 +22,96 @@ trip, against 11.9 ms of server execution. The 400 ms criterion has room.
 
 **Do not start Phase 3 until real data is in.**
 
+## Scope is settled — §12. Stop theorising, go collect data.
+
+Nat asked directly whether he is designing three phases ahead while sitting on 15
+fake places and zero users. **He is, and the answer is yes, stop.**
+
+The scope questions were worth answering *once*, because writing the line down is
+what stops it recurring — and every one of them turned out to need **no schema
+change, no new phase, and no code**. Deferring them costs nothing. That is the
+tell: work that costs nothing to defer is work that should be deferred.
+
+The stronger point: **Phase 2's acceptance criterion has never been met.** There
+is no evidence yet that the core product is useful, because it has never run on a
+real place. Designing Manila day trips before knowing whether a Bocaue Saturday
+works is optimising a hypothesis nobody has tested.
+
+The one-line boundary, in case a future session drifts: **Amora plans time within
+a place you are already in.** "Day 3 in Manila with ₱500" is Amora and needs only
+data. "Plan my Cebu trip" is a different product where our moat is worth nothing —
+at trip scale a ₱25 tricycle fare is 0.17% of the budget instead of 12%.
+
+**Next action is the field checklist, not this file.**
+
+## Review findings — read before the data run
+
+A full repo review found one live bug and settled two conventions. Both are now
+in `00-architecture.md` §9; the doctrine behind them is §10 and §11.
+
+**Totals were wrong by up to 2×.** The checklist defined `price_min` as "one
+drink, one serving" (per person) while `build_simple_plan` summed those and called
+the result the plan total — the device run's "Total ₱200 / budget ₱200" understated
+a couple's real cost. **No document stated the convention anywhere.** Settled:
+**money is per person, totals multiply by `party_size`**, and the budget always
+means the whole outing. `transit_fares.is_per_person` handles the fare case, where
+a jeepney charges each passenger and a tricycle special trip charges once.
+
+**Phase 7 is a filtered list, not a feed** — and `CLAUDE.md`'s not-building list
+already said "community feed", so this records reasoning behind a line that was
+already there. Ranking specifies behaviour: rank by recency and people optimise
+for photos, which costs the price data that makes a shared plan worth anything.
+
+**Web search is a research aid, never a source.** Leads live in
+`supabase/seed/candidates/` with columns deliberately incompatible with
+`places.csv`. Verified: pasting them in exits 1 on `assertHeaders`. That is the
+guard — a mechanism, not a habit.
+
+**Seed-as-hypothesis holds, with one thing to remember:** stale hours are
+*self-concealing*. The couple hits a locked door, abandons the plan, never
+completes it, so no report is written and nothing is corrected. Hence closure
+reports do not require a completed plan; price reports do. Correction is
+**additive** — community values go in their own columns, and the hand-verified
+value is never overwritten.
+
+**It does not lower the field bar.** The correction loop needs completed plans and
+a wrong seed prevents completion, so bad rows are abandoned rather than fixed.
+15 hand-verified rows stays the target.
+
+## The intake is a conversation now — decided, don't reopen
+
+Nat is building an **agent UI**: type what you want, constraints appear as
+editable chips, then a plan. The docs previously specified a structured form
+throughout. I argued for the form and was overruled; both sides are recorded in
+`00-architecture.md` §9 and D10 so it does not get relitigated.
+
+**The one rule that makes it affordable:** free text is reduced to the existing
+constraint record *before* anything is hashed (§7 step 0), so `plan_cache` keys on
+exactly what it always keyed on. Chat is quarantined to one cheap, retrieval-free
+call at the front, and a tapped starter chip skips even that. **Never let raw
+utterance text into a cache key** — that is the whole reason this works.
+
+Roadmap changes that followed:
+
+- **Phase 3 is unchanged** and still runs off the Phase 2 structured intake.
+  Generation gets proven against a boring fixed input before language
+  understanding is added, so a wrong plan has one suspect, not two.
+- **New Phase 3b — conversational intake.** Extraction Edge Function,
+  `intake_cache`, chat UI. Numbered `3b` to avoid renumbering 4–10 across three
+  docs.
+- **Phase 4 extended** to the result screen as pictured: place detail rendering
+  `place_notes` (which had existed since Phase 0 with no renderer — a real hole in
+  D2's claim to replace the Reddit tab), plus embedded DIY tutorial videos.
+- **`plan_request/` is not thrown away.** It becomes the substrate the chat sits
+  on, the fallback when extraction fails, and the only way to test retrieval
+  without a model in the loop.
+
+**Dependency flagged, not added:** embedding needs `youtube_player_iframe` (on
+official `webview_flutter`) at Phase 4. **Check the Kotlin Gradle Plugin first** —
+that is what got `flutter_image_compress` removed at Phase 0. Keep the
+`url_launcher` "open in YouTube" fallback; it is the only thing that works for an
+embed-disabled video, which the field checklist now screens for at collection.
+
 ### What the device run caught
 
 Three instances of one mistake, invisible to every widget test because they were
@@ -165,6 +255,18 @@ leave this file at the desk.
 routes — Poblacion, Turo, Bunlo, Lolomboy, Duhat, Wakas, Batia, plus Marilao and
 Balagtas). `activities` (16) are generic and fine.
 
+> ⚠️ **`transit_fares.is_per_person` is `true` on all 15 rows, and on the 9
+> tricycle rows that is an unverified default rather than a finding.** The column
+> was added after those fares were collected and nobody recorded which rate was
+> quoted. A tricycle special trip charges once for the vehicle, so any of those
+> rows that was a special trip currently doubles for a couple. Jeepney rows are
+> safe — a jeepney always charges per passenger.
+>
+> The nine routes are a **tick-box riding list in `FIELD-CHECKLIST.md`**, with
+> fares, so they are in hand while out rather than only recorded here.
+> `verified_at` is also null on all nine — nothing currently records that anyone
+> has ridden any of them.
+
 Wipe the placeholders with:
 
 ```sql
@@ -198,8 +300,34 @@ criterion is "real, currently-open places".
 - **`apply_migration` cannot read a file** — the SQL is passed inline, so the
   committed file and what was applied are two copies. Verify behaviour with
   `execute_sql` afterwards rather than assuming they match.
+- **`comment on function` and `grant` need the full argument list** when two
+  overloads of a name exist, or Postgres errors with "function name is not
+  unique". When a function gains a parameter, `create or replace` makes an
+  overload rather than replacing — **drop the old signature first**.
+- **`node ... --out /dev/null` creates a literal `nul` file on Windows**, since
+  Node writes the path rather than the device. Use a scratch path instead.
 - Errors reaching the UI must go through `RepositoryException`; GoTrue will
   otherwise surface a raw JSON blob to the user.
+
+## Coverage — a release gate, not a phase
+
+**The app ships nationwide; only the data is Bocaue.** Nothing in the code is
+city-specific, so a build installed anywhere works and finds nothing.
+
+Not live yet: distribution is `flutter run` and hand-passed APKs, and profile
+setup fixes city to Bocaue. Every user was handed the app personally, so there
+are no uncovered users by construction.
+
+**It goes live the moment an APK reaches someone Nat did not hand it to.** Before
+that happens: say "Amora only knows Bocaue" *before* onboarding finishes, never
+show a bare empty result screen, and capture where the user is in one tap — it is
+the only signal that answers "which city next". Full reasoning in §12.5.
+
+**Uncovered users should not be told to add their own places.** RLS makes it safe
+(quarantined by invariant 5), but a user entering their own café and being shown
+it back has a notes app, not Amora — the promise is that *we already knew*.
+User-submitted stops stay what Phase 5 says they are: adding a missing stop inside
+a covered city.
 
 ## Deferred, deliberately
 
