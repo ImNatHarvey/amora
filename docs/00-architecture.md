@@ -538,7 +538,7 @@ in, resources still there.
 > place is the 6-character minimum enforced both by Supabase and by the sign-up
 > form. Revisit only if the project ever moves off the free tier.
 
-**Phase 2 — Retrieval, no AI — ⚠️ BUILT, NOT YET ACCEPTED**
+**Phase 2 — Retrieval, no AI — ⚠️ VERIFIED ON DEVICE, AWAITING REAL DATA**
 Radius + budget + hours query. A crude non-AI plan builder picking the 3 nearest
 budget-fitting places. Haversine distances, fare lookup, cost totals. A minimal
 plain-text (no map, no styling) list screen renders the results — enough to satisfy
@@ -550,7 +550,14 @@ isn't useful, the AI won't save it.**
 > **"Under 400 ms" means server execution time.** Measured at 11.9 ms on the seed
 > data. End-to-end from the device also carries a Manila↔Tokyo round trip, which
 > nothing in this phase can reduce; the screen shows the round-trip figure so both
-> are visible, but only the server half is the criterion.
+> are visible, but only the server half is the criterion. On device the whole
+> round trip measured 202–340 ms, so both readings pass — but they will diverge
+> on mobile data, and only one of them is Amora's to control.
+>
+> **Verified on the S25 Ultra** in dark mode at 1.3× font scale: the full flow
+> renders, the radius visibly widens from 3 km to 5 km when ₱0 leaves too few
+> candidates nearby (§9's rule, working), activity filtering drops from 9 to 5 as
+> the budget falls, and no render overflows appear at either font scale.
 >
 > **Origin is a barangay picker, not GPS.** `transit_fares` is keyed by barangay,
 > so a GPS coordinate would have to be resolved to one before any leg could be

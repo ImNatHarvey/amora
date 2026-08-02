@@ -226,6 +226,105 @@ void main() {
       expect(find.text('Total ₱165'), findsOneWidget);
     });
 
+    testWidgets('a zero addend in the breakdown reads as an amount, not "free"',
+        (tester) async {
+      // Caught on device: every leg was a walk, so the breakdown rendered
+      // "places ₱200 · fares free", which reads as a category rather than a
+      // figure. ₱0 stays "free" wherever it is a price in its own right.
+      final retrieval = FakeRetrievalRepository(
+        plan: _plan(
+          stops: [
+            PlanStop(
+              seq: 1,
+              place: _place(name: 'Casual Diner', priceMin: 20000),
+              distanceFromOriginM: 139,
+            ),
+          ],
+          legs: const [
+            PlanLeg(
+              seq: 1,
+              fromName: 'Bunlo',
+              toName: 'Casual Diner',
+              mode: 'walk',
+              distanceM: 139,
+              farePhpCents: 0,
+              fareKnown: true,
+            ),
+          ],
+          totals: const PlanTotals(
+            placesPhpCents: 20000,
+            faresPhpCents: 0,
+            totalPhpCents: 20000,
+            unpricedLegs: 0,
+            isComplete: true,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(_screen(retrieval));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Build a plan'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('places ₱200 · fares ₱0'), findsOneWidget);
+      expect(find.textContaining('fares free'), findsNothing);
+      // A free walk still reads as free — that one is a price, not an addend.
+      expect(find.textContaining('walk · free'), findsOneWidget);
+    });
+
+    testWidgets('a zero budget is echoed as an amount, not "free"',
+        (tester) async {
+      // Also caught on device: the header read "budget free", which describes
+      // a constraint rather than pricing anything. Same rule as the breakdown.
+      final retrieval = FakeRetrievalRepository(
+        plan: SimplePlan(
+          plannedForUtc: DateTime.utc(2026, 8, 7, 10),
+          budgetPhpCents: 0,
+          originArea: 'Bunlo',
+          radiusM: 5000,
+          stops: [
+            PlanStop(
+              seq: 1,
+              place: _place(name: 'Town Plaza'),
+              distanceFromOriginM: 70,
+            ),
+          ],
+          legs: const [
+            PlanLeg(
+              seq: 1,
+              fromName: 'Bunlo',
+              toName: 'Town Plaza',
+              mode: 'walk',
+              distanceM: 70,
+              farePhpCents: 0,
+              fareKnown: true,
+            ),
+          ],
+          totals: const PlanTotals(
+            placesPhpCents: 0,
+            faresPhpCents: 0,
+            totalPhpCents: 0,
+            unpricedLegs: 0,
+            isComplete: true,
+          ),
+          candidateActivities: const [],
+        ),
+      );
+
+      await tester.pumpWidget(_screen(retrieval));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextFormField), '0');
+      await tester.tap(find.text('Build a plan'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('budget ₱0'), findsOneWidget);
+      expect(find.textContaining('budget free'), findsNothing);
+      // A wholly free plan still gets the warm headline — that one is a price.
+      expect(find.text('Total free'), findsOneWidget);
+    });
+
     testWidgets('an unpriced leg is named and left out of the total',
         (tester) async {
       final retrieval = FakeRetrievalRepository(

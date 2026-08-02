@@ -200,8 +200,17 @@ class _PlanRequestScreenState extends ConsumerState<PlanRequestScreen> {
 ///
 /// Money is integer centavos everywhere else in the app; this is the single
 /// point where it becomes text for a human.
-String _pesos(int cents) {
-  if (cents == 0) return 'free';
+///
+/// Zero reads as "free" by default, which is the design system's position on ₱0
+/// — good news, never muted (docs 02 §2).
+///
+/// The rule, learned by reading all three wrong on a device: "free" belongs
+/// wherever ₱0 is *the price of something* — a place, a leg, a plan total. Pass
+/// [zeroIsFree] false wherever it is an addend in a breakdown or a constraint
+/// being echoed back, because "places ₱200 · fares free", "budget free" and
+/// "none fit free" all read as a category rather than an amount.
+String _pesos(int cents, {bool zeroIsFree = true}) {
+  if (cents == 0) return zeroIsFree ? 'free' : '₱0';
   final pesos = cents ~/ 100;
   final remainder = cents % 100;
   return remainder == 0
@@ -259,7 +268,7 @@ class _PlanView extends StatelessWidget {
                 ? 'No curated place near ${plan.originArea} is open at '
                     '${formatManila(plannedFor)}.'
                 : 'Places were open within ${_distance(plan.radiusM!)}, but '
-                    'none fit ${_pesos(plan.budgetPhpCents)}.',
+                    'none fit ${_pesos(plan.budgetPhpCents, zeroIsFree: false)}.',
             style: theme.textTheme.bodyMedium,
           ),
         ],
@@ -275,7 +284,8 @@ class _PlanView extends StatelessWidget {
         ),
         SizedBox(height: tokens.xs),
         Text(
-          '${formatManila(plannedFor)} · budget ${_pesos(plan.budgetPhpCents)}'
+          '${formatManila(plannedFor)} · '
+          'budget ${_pesos(plan.budgetPhpCents, zeroIsFree: false)}'
           '${plan.radiusM == null ? '' : ' · within ${_distance(plan.radiusM!)}'}'
           ' · ${timed.elapsed.inMilliseconds} ms',
           style: theme.textTheme.bodySmall
@@ -402,8 +412,8 @@ class _TotalsBlock extends StatelessWidget {
           style: theme.textTheme.titleMedium,
         ),
         Text(
-          'places ${_pesos(totals.placesPhpCents)} · '
-          'fares ${_pesos(totals.faresPhpCents)}',
+          'places ${_pesos(totals.placesPhpCents, zeroIsFree: false)} · '
+          'fares ${_pesos(totals.faresPhpCents, zeroIsFree: false)}',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),

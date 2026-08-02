@@ -6,21 +6,38 @@ don't say. Last updated for the Phase 2 commit.
 
 ## Where we are
 
-Phases 0 and 1 are complete and accepted on device. **Phase 2 is written, tested
-and applied, but NOT accepted** — two things are outstanding, in this order:
+Phases 0 and 1 are complete and accepted on device. **Phase 2 is written, tested,
+applied, and verified on the phone — but NOT accepted.** One thing is left:
 
-1. **It has never run on the phone.** Wireless debugging was off during the
-   session that built it, and Nat has **deliberately deferred** the device check
-   until the phone is back on the network — do not treat it as blocking other
-   work, and do not nag. Recovery steps are under "Test device" below.
-2. **Acceptance needs real places.** Its criterion is "real, currently-open
-   places"; all 15 rows are still `test-*`. See "Seed data" below.
+**Acceptance needs real places.** The criterion is "real, currently-open places";
+all 15 rows are still `test-*`. See "Seed data" below. Nothing else blocks it.
 
-Everything else passes: `flutter analyze` clean, 21 tests green, the migration
-applied, and the SQL assertions (haversine, fare symmetry, past-midnight hours)
-all verified against the live database.
+Everything else passes: `flutter analyze` clean, 23 tests green, the migration
+applied, the SQL assertions (haversine, fare symmetry, past-midnight hours)
+verified against the live database, and the full flow driven on the S25 Ultra in
+dark mode at 1.3× font scale with zero render overflows.
 
-**Do not start Phase 3 until 1 and 2 are done.**
+Measured on device: **202–340 ms** end to end including the Manila↔Tokyo round
+trip, against 11.9 ms of server execution. The 400 ms criterion has room.
+
+**Do not start Phase 3 until real data is in.**
+
+### What the device run caught
+
+Three instances of one mistake, invisible to every widget test because they were
+all about *wording*, and invisible on the placeholder data until a plan with no
+fares actually rendered: `_pesos(0)` returned `'free'` unconditionally, so the
+screen read "places ₱200 · fares **free**", "budget **free**" and "none fit
+**free**".
+
+The rule now encoded in `_pesos(cents, {zeroIsFree})`: **"free" belongs wherever
+₱0 is the price of something** — a place, a leg, a plan total, where the design
+system's "free is good news, never muted" applies (docs 02 §2). **It does not
+belong where ₱0 is an addend in a breakdown or a constraint being echoed back**,
+where it reads as a category rather than an amount. "Total free" is right;
+"fares free" is not.
+
+Worth remembering for Phase 4, which renders far more money than this screen.
 
 ## Phase 2, in one paragraph
 
