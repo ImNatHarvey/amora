@@ -143,6 +143,7 @@ class FakeRetrievalRepository implements RetrievalRepository {
           plannedForUtc: plannedForUtc,
           budgetPhpCents: budgetPhpCents,
           originArea: origin.area,
+          partySize: RetrievalRepository.partySize,
           radiusM: 5000,
           stops: const [],
           legs: const [],

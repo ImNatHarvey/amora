@@ -25,6 +25,15 @@ Fill them in this order, since later files reference earlier ones:
 **Money is in pesos, not centavos.** Write `180` or `180.50`; the script converts
 to the integer centavos the database stores. Never write `18000`.
 
+**Money is per person.** `price_min_php` / `price_max_php` are what *one* person
+spends; the app multiplies by party size. Activity budgets are the same. Fares are
+the exception: `is_per_person` decides, because a jeepney charges every passenger
+while a tricycle special trip charges once for the vehicle. See
+`docs/00-architecture.md` §9.
+
+**`verified_on` is the date you stood there**, not the date you imported. Leave it
+blank only for rows nobody has visited — which should be none of them.
+
 **Opening hours** use a compact grammar, converted to jsonb on import:
 
 ```

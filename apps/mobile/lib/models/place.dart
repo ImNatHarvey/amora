@@ -72,7 +72,10 @@ class Place {
 
   factory Place.fromMap(Map<String, dynamic> map) {
     return Place(
-      id: map['place_id'] as String,
+      // `place_id` is what the retrieval RPCs alias it to; `id` is the column's
+      // real name. Accepting both means a direct query of `places` — which
+      // Phase 4's place detail will do — does not fail on a null cast.
+      id: (map['place_id'] ?? map['id']) as String,
       slug: map['slug'] as String,
       name: map['name'] as String,
       category: map['category'] as String,

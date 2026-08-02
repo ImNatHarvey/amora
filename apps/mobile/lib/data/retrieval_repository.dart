@@ -38,10 +38,20 @@ class RetrievalRepository {
     );
   }
 
+  /// How many people the plan is for.
+  ///
+  /// Two, because D1 scopes the MVP to couples. It is a named constant rather
+  /// than a literal because prices are stored per person and this is the
+  /// multiplier that turns them into what the outing costs — see
+  /// `docs/00-architecture.md` §9. It becomes `plans.party_size` when friends
+  /// and families arrive (§11).
+  static const partySize = 2;
+
   /// Builds a plan. One round trip: the server retrieves, composes and costs.
   ///
   /// [plannedForUtc] must be UTC — the server converts to Manila wall clock to
-  /// decide what is open.
+  /// decide what is open. [budgetPhpCents] is what the whole party can spend,
+  /// not what each person can.
   Future<SimplePlan> buildSimplePlan({
     required String city,
     required int budgetPhpCents,
@@ -61,6 +71,7 @@ class RetrievalRepository {
             'p_origin_lat': origin.lat,
             'p_origin_lng': origin.lng,
             'p_owned_resource_ids': ownedResourceIds.toList(),
+            'p_party_size': partySize,
           },
         );
 

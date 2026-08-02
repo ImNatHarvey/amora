@@ -51,7 +51,7 @@ const CSV_SPECS = {
     columns: [
       'slug', 'name', 'category', 'lat', 'lng', 'address', 'barangay', 'city',
       'opening_hours', 'price_min_php', 'price_max_php', 'indoor',
-      'sunset_facing', 'social_url', 'contact_number', 'notes',
+      'sunset_facing', 'social_url', 'contact_number', 'notes', 'verified_on',
     ],
     key: ['slug'],
   },
@@ -64,7 +64,9 @@ const CSV_SPECS = {
     key: ['slug'],
   },
   'transit_fares.csv': {
-    columns: ['from_area', 'to_area', 'mode', 'fare_php', 'verified_at'],
+    columns: [
+      'from_area', 'to_area', 'mode', 'fare_php', 'is_per_person', 'verified_at',
+    ],
     key: ['from_area', 'to_area', 'mode'],
   },
   'place_notes.csv': {
@@ -398,7 +400,8 @@ function placesSql(rows) {
     return `insert into public.places (
   slug, name, category, lat, lng, address, barangay, city, opening_hours,
   price_min_php_cents, price_max_php_cents, indoor, sunset_facing,
-  verification_tier, source, social_url, contact_number, notes, verified_at
+  verification_tier, source, social_url, contact_number, notes,
+  verified_at, verified_on
 ) values (
   ${sqlText(r.slug)}, ${sqlText(r.name)}, ${sqlText(r.category)},
   ${sqlNumber(r.lat, ctx('lat'))}, ${sqlNumber(r.lng, ctx('lng'))},
@@ -409,7 +412,7 @@ function placesSql(rows) {
   ${sqlBool(r.indoor)}, ${sqlBool(r.sunset_facing)},
   'curated', 'owner',
   ${sqlText(r.social_url)}, ${sqlText(r.contact_number)}, ${sqlText(r.notes)},
-  now()
+  now(), ${r.verified_on === '' ? 'null' : `${sqlText(r.verified_on)}::date`}
 )
 on conflict (slug) do update set
   name = excluded.name,
@@ -426,7 +429,8 @@ on conflict (slug) do update set
   sunset_facing = excluded.sunset_facing,
   social_url = excluded.social_url,
   contact_number = excluded.contact_number,
-  notes = excluded.notes;`;
+  notes = excluded.notes,
+  verified_on = excluded.verified_on;`;
   });
 }
 
@@ -497,13 +501,16 @@ on conflict (slug) do update set
 function transitFaresSql(rows) {
   return rows.map((r) => {
     const ctx = (field) => ({ field, row: r });
-    return `insert into public.transit_fares (from_area, to_area, mode, fare_php_cents, verified_at)
-values (
+    return `insert into public.transit_fares (
+  from_area, to_area, mode, fare_php_cents, is_per_person, verified_at
+) values (
   ${sqlText(r.from_area)}, ${sqlText(r.to_area)}, ${sqlText(r.mode)},
-  ${pesosToCents(r.fare_php, ctx('fare_php'))}, ${sqlTimestamp(r.verified_at)}
+  ${pesosToCents(r.fare_php, ctx('fare_php'))},
+  ${sqlBool(r.is_per_person)}, ${sqlTimestamp(r.verified_at)}
 )
 on conflict (from_area, to_area, mode) do update set
   fare_php_cents = excluded.fare_php_cents,
+  is_per_person = excluded.is_per_person,
   verified_at = excluded.verified_at;`;
   });
 }

@@ -36,16 +36,25 @@ class PlanStop {
     required this.seq,
     required this.place,
     required this.distanceFromOriginM,
+    required this.partyPricePhpCents,
   });
 
   factory PlanStop.fromMap(Map<String, dynamic> map) => PlanStop(
         seq: map['seq'] as int,
         place: Place.fromMap(map),
         distanceFromOriginM: map['distance_m'] as int,
+        partyPricePhpCents: map['party_price_php_cents'] as int,
       );
 
   final int seq;
   final Place place;
+
+  /// What the whole party spends here: [Place.priceMinPhpCents] × party size.
+  ///
+  /// Computed server-side, never here — invariant 3 keeps money arithmetic in
+  /// Postgres. It is carried separately from the per-person price so the UI can
+  /// show both without multiplying anything itself.
+  final int partyPricePhpCents;
 
   /// Straight-line from the plan's origin, not from the previous stop, and not
   /// road distance. [PlanLeg.distanceM] is the stop-to-stop figure.
@@ -142,6 +151,7 @@ class SimplePlan {
     required this.legs,
     required this.totals,
     required this.candidateActivities,
+    this.partySize = 2,
     this.radiusM,
   });
 
@@ -151,6 +161,7 @@ class SimplePlan {
       plannedForUtc: DateTime.parse(map['planned_for'] as String).toUtc(),
       budgetPhpCents: map['budget_php_cents'] as int,
       originArea: origin['area'] as String,
+      partySize: map['party_size'] as int? ?? 2,
       radiusM: map['radius_m'] as int?,
       stops: [
         for (final stop in map['stops'] as List)
@@ -169,8 +180,13 @@ class SimplePlan {
   }
 
   final DateTime plannedForUtc;
+
+  /// What the whole party can spend, not what each person can.
   final int budgetPhpCents;
   final String originArea;
+
+  /// How many people. Two while D1 scopes the MVP to couples.
+  final int partySize;
 
   /// 3000 or 5000 — which radius retrieval settled on (docs §9). Null when
   /// nothing at all came back, so the UI can distinguish "nothing within 5 km"

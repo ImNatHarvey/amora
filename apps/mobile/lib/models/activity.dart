@@ -18,7 +18,9 @@ class Activity {
 
   factory Activity.fromMap(Map<String, dynamic> map) {
     return Activity(
-      id: map['activity_id'] as String,
+      // The RPC aliases this to `activity_id`; the column is `id`. See the same
+      // note in place.dart.
+      id: (map['activity_id'] ?? map['id']) as String,
       slug: map['slug'] as String,
       title: map['title'] as String,
       category: map['category'] as String?,

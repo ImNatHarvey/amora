@@ -279,7 +279,8 @@ class _PlanView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '${plan.stops.length} stops from ${plan.originArea}',
+          '${plan.stops.length} stops from ${plan.originArea}'
+          '${plan.partySize == 1 ? '' : ' for ${plan.partySize}'}',
           style: theme.textTheme.titleMedium,
         ),
         SizedBox(height: tokens.xs),
@@ -294,7 +295,11 @@ class _PlanView extends StatelessWidget {
         SizedBox(height: tokens.md),
         for (var i = 0; i < plan.stops.length; i += 1) ...[
           if (i < plan.legs.length) _LegLine(leg: plan.legs[i]),
-          _StopLine(stop: plan.stops[i], plannedFor: plannedFor),
+          _StopLine(
+            stop: plan.stops[i],
+            plannedFor: plannedFor,
+            partySize: plan.partySize,
+          ),
         ],
         SizedBox(height: tokens.md),
         const Divider(),
@@ -353,20 +358,33 @@ class _LegLine extends StatelessWidget {
 }
 
 class _StopLine extends StatelessWidget {
-  const _StopLine({required this.stop, required this.plannedFor});
+  const _StopLine({
+    required this.stop,
+    required this.plannedFor,
+    required this.partySize,
+  });
 
   final PlanStop stop;
   final DateTime plannedFor;
+  final int partySize;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final place = stop.place;
 
-    final price = place.priceMaxPhpCents == null ||
+    // Stored prices are per person, and the total below is for the party — so
+    // the two figures must not sit side by side unlabelled or they read as a
+    // contradiction. "each" is the cheapest way to make that unambiguous.
+    final range = place.priceMaxPhpCents == null ||
             place.priceMaxPhpCents == place.priceMinPhpCents
         ? _pesos(place.priceMinPhpCents)
         : '${_pesos(place.priceMinPhpCents)}–${_pesos(place.priceMaxPhpCents!)}';
+    // A free place takes no per-head qualifier — "free each" is absurd. Note
+    // priceMax is null, not 0, for most free places, so this has to coalesce.
+    final isFree =
+        place.priceMinPhpCents == 0 && (place.priceMaxPhpCents ?? 0) == 0;
+    final price = isFree || partySize == 1 ? range : '$range each';
 
     final hours = place.openingHours?.describe(plannedFor) ?? 'hours unknown';
 

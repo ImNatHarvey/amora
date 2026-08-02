@@ -67,6 +67,25 @@ Place _place({
   );
 }
 
+/// A stop, with the party price derived the way the server derives it.
+///
+/// Kept as a helper so a test can never accidentally assert a party price that
+/// is not `price_min × party` — the exact relationship the per-person fix is
+/// there to guarantee.
+PlanStop _stop({
+  required int seq,
+  required Place place,
+  required int distanceFromOriginM,
+  int partySize = 2,
+}) {
+  return PlanStop(
+    seq: seq,
+    place: place,
+    distanceFromOriginM: distanceFromOriginM,
+    partyPricePhpCents: place.priceMinPhpCents * partySize,
+  );
+}
+
 SimplePlan _plan({
   required List<PlanStop> stops,
   required List<PlanLeg> legs,
@@ -149,7 +168,7 @@ void main() {
       final retrieval = FakeRetrievalRepository(
         plan: _plan(
           stops: [
-            PlanStop(
+            _stop(
               seq: 1,
               place: _place(
                 name: 'Town Plaza',
@@ -161,7 +180,7 @@ void main() {
               ),
               distanceFromOriginM: 72,
             ),
-            PlanStop(
+            _stop(
               seq: 2,
               place: _place(
                 name: 'Corner Cafe',
@@ -212,14 +231,19 @@ void main() {
       await tester.tap(find.text('Build a plan'));
       await tester.pumpAndSettle();
 
-      expect(find.text('2 stops from Poblacion'), findsOneWidget);
+      expect(find.text('2 stops from Poblacion for 2'), findsOneWidget);
       expect(find.text('1. Town Plaza'), findsOneWidget);
       expect(find.text('2. Corner Cafe'), findsOneWidget);
 
       // Free is spelled out rather than shown as ₱0 (design system §2:
       // free is good news, never muted).
       expect(find.textContaining('free'), findsWidgets);
-      expect(find.textContaining('₱150–₱350'), findsOneWidget);
+
+      // Stored prices are per person and the total is for the party, so a
+      // priced stop must say "each" or the two figures read as a contradiction.
+      expect(find.textContaining('₱150–₱350 each'), findsOneWidget);
+      // ...but a free place gets no per-head qualifier; "free each" is absurd.
+      expect(find.textContaining('free each'), findsNothing);
 
       // Legs carry mode and fare.
       expect(find.textContaining('jeepney · ₱15'), findsOneWidget);
@@ -234,7 +258,7 @@ void main() {
       final retrieval = FakeRetrievalRepository(
         plan: _plan(
           stops: [
-            PlanStop(
+            _stop(
               seq: 1,
               place: _place(name: 'Casual Diner', priceMin: 20000),
               distanceFromOriginM: 139,
@@ -284,7 +308,7 @@ void main() {
           originArea: 'Bunlo',
           radiusM: 5000,
           stops: [
-            PlanStop(
+            _stop(
               seq: 1,
               place: _place(name: 'Town Plaza'),
               distanceFromOriginM: 70,
@@ -330,7 +354,7 @@ void main() {
       final retrieval = FakeRetrievalRepository(
         plan: _plan(
           stops: [
-            PlanStop(
+            _stop(
               seq: 1,
               place: _place(name: 'Dessert Bar', priceMin: 18000),
               distanceFromOriginM: 2400,
