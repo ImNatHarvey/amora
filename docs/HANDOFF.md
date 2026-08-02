@@ -17,6 +17,17 @@ applied, the SQL assertions (haversine, fare symmetry, past-midnight hours)
 verified against the live database, and the full flow driven on the S25 Ultra in
 dark mode at 1.3× font scale with zero render overflows.
 
+**Pre-flight for the data run, both done and both clean:**
+
+- **Per-person pricing verified on device.** ₱400 party budget renders "3 stops
+  from Bunlo for 2", "₱200–₱400 each" on the priced stop, and Total ₱400 — the
+  same plan that displayed ₱200 before the fix. Free places correctly take no
+  "each" qualifier. 186 ms, no overflows.
+- **The importer round-trips the two new columns.** A `verified_on` date and an
+  `is_per_person = false` were pushed CSV → generated SQL → database and read
+  back intact, then reverted. The pipeline he will run on return works with the
+  new shape; he is not going to discover an importer bug at 11pm.
+
 Measured on device: **202–340 ms** end to end including the Manila↔Tokyo round
 trip, against 11.9 ms of server execution. The 400 ms criterion has room.
 
