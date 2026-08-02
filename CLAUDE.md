@@ -136,6 +136,26 @@ full repository → provider → widget chain: see `docs/00-architecture.md` §4
 
 ---
 
+## Handoff file
+
+`docs/HANDOFF.md` is the context bridge for fresh sessions — both new Claude Code
+sessions and the web chat I use for planning.
+
+Update it whenever you print a batch of commit messages, before I apply them.
+Treat it as part of the commit batch, not an afterthought.
+
+Keep it to what the other docs don't say:
+- current phase, what's done, what's next
+- environment and device state
+- decisions made in conversation that never landed in another doc
+- gotchas already hit, so they aren't repeated
+- state of the seed data
+
+Do not duplicate `docs/00-architecture.md`. If something belongs there, put it
+there and leave `HANDOFF.md` short. Target one page.
+
+---
+
 ## Explicitly NOT building yet
 
 Do not scaffold, stub, or "prepare for" any of these:
