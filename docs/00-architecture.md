@@ -25,6 +25,27 @@ Gemini for ideas, Maps for location, a Facebook page for real menu prices, Reddi
 whether it's any good. Amora collapses that into one screen. That framing is why a
 chatbot can't replace it — a chatbot is only tab one.
 
+> **This constrains the facts, not the interface.** Amora's intake *is*
+> conversational (D10) — the user types what they want and the model reads it.
+> What D2 forbids is the model being the source of the answer. The interface may
+> be a conversation; the prices, hours and fares in it may not be. A chatbot that
+> invents a café is tab one wearing a nicer coat.
+
+**D10 — Intake is conversational; retrieval is not.** The user describes what they
+want in their own words. The model turns that into a structured constraint record,
+shows it back as chips the user can correct, and the existing retrieval pipeline
+runs on those constraints unchanged (§7).
+
+The alternative — a structured form — was argued for and rejected. The form is
+cheaper, has no blank-page problem, and hashes trivially for the cache. It also
+cannot accept "it's our anniversary but she's been stressed, so somewhere quiet",
+which is exactly the signal that separates a good suggestion from a plausible one.
+
+The cost objection to conversation was real and is answered by the design rather
+than waved away: free text cannot be cache-hashed, but *extracted constraints*
+can, and they are what reaches §7 step 2. See §9 for the full reasoning, which is
+recorded so this does not get relitigated every time the quota is discussed.
+
 **D3 — The curated local database is the moat.** The first 200–300 places are entered
 by hand. This is unglamorous and it is the entire business.
 
@@ -210,6 +231,7 @@ lib/
     resources_repository.dart
     retrieval_repository.dart        -- Phase 2, wraps the retrieval RPCs
     plan_generation_repository.dart  -- Phase 3+, wraps the Edge Function call
+    intake_repository.dart           -- Phase 3b, wraps the extraction call
     plans_repository.dart            -- Phase 3+
   models/
     profile.dart
@@ -231,10 +253,19 @@ lib/
       resource_icons.dart            -- icon-name -> IconData lookup
     dev/
       token_gallery_screen.dart      -- /dev/tokens, the light/dark check surface
-    plan_request/                    -- Phase 2+
+    plan_request/                    -- Phase 2+, the structured intake
       plan_request_providers.dart
       plan_request_screen.dart
+    chat/                            -- Phase 3b, the conversational shell
+      chat_screen.dart
+      chat_providers.dart
+      constraint_chips.dart          -- the editable extracted constraints
 ```
+
+`plan_request/` does not disappear when `chat/` arrives. The conversation
+produces the same constraint record that screen already builds by hand, so it
+stays as the substrate, the fallback when extraction fails, and the surface that
+makes retrieval testable without a model in the loop.
 
 **Two ordering constraints the app boot depends on**, both learned by breaking
 them on a device:
@@ -326,6 +357,13 @@ places
   is_partner bool  partner_tier int
   social_url  contact_number  notes
 
+  -- Phase 6b, community correction. ADDITIVE: the hand-verified values above are
+  -- never overwritten, so a bad correction is undone by nulling one column and
+  -- verification_tier keeps describing the row's provenance (§10.5).
+  community_price_php_cents  community_price_n  community_price_updated_at
+  quarantined_at                      -- 2 closure reports in 30 days. Excluded
+                                      -- from retrieval, flagged, never deleted.
+
 place_notes                           -- the "Reddit layer": lived experience
   id  place_id  body  source_label  added_at
 
@@ -338,9 +376,14 @@ activities
 
 transit_fares
   id  from_area  to_area  mode  fare_php_cents  verified_at
+  is_per_person bool                  -- jeepney/bus charge each passenger;
+                                      -- a tricycle special trip is one flat fare
+                                      -- for the vehicle. §9, per-person pricing.
 
 plans
   id  user_id  title  budget_php_cents  companion_type  occasion
+  party_size int                       -- 2 while D1 holds; the multiplier that
+                                       -- makes per-person prices survive §11
   planned_for timestamptz
   status                              -- 'draft' | 'active' | 'completed'
   origin                              -- 'generated' | 'manual'
@@ -354,6 +397,10 @@ plan_legs
   id  plan_id  from_item_id  to_item_id  seq
   mode                                -- 'walk'|'tricycle'|'jeepney'|'bus'|'drive'
   distance_m  duration_min  fare_php_cents
+  actual_fare_php_cents               -- Phase 6. What they really paid. Fares
+                                      -- drift faster than menu prices and no API
+                                      -- tracks them (D5), so this is the only
+                                      -- correction signal transit will ever get.
 
 plan_edits                            -- product-quality telemetry
   id  plan_id  user_id  edit_type     -- 'add'|'remove'|'reorder'|'retime'|'swap'
@@ -365,9 +412,26 @@ memories
 
 place_reports                         -- crowdsourced price truth
   id  place_id  user_id  reported_cost_php_cents  still_open bool  note
+  plan_id → plans                     -- null for a closure report; required for
+                                      -- a price report (§10.5 asymmetry)
+  created_at                          -- without this a report cannot be aged,
+                                      -- and recency is the entire value of one
+
+  -- One row per STOP, not one per plan: §10.5 corrects prices per place, which
+  -- plan-level actual spend cannot attribute.
 
 plan_cache
   id  constraint_hash  payload jsonb  hit_count  created_at
+  places_version int                  -- bumped whenever a price is corrected or
+                                      -- a place is quarantined. Without it a
+                                      -- corrected row keeps serving stale totals
+                                      -- out of cache forever (§10.5).
+
+intake_cache                          -- utterance -> constraints, Phase 3b
+  id  utterance_hash  constraints jsonb  hit_count  created_at
+  -- normalised text (lowercased, whitespace-collapsed) so repeat phrasings
+  -- resolve without a model call. Shared across users: an utterance carries no
+  -- personal data once reduced to a budget, a time bucket and a barangay.
 
 placement_events
   id  place_id  plan_id  event_type   -- 'impression'|'click'|'completed'
@@ -389,9 +453,14 @@ the owner role. Everything user-scoped is readable only by its owner.
 of it — each phase's migration adds only the tables that phase needs (`profiles`,
 `resource_catalog`, `user_resources`, `places`, `place_notes`, `activities`,
 `transit_fares` in Phase 0; `plans`/`plan_items`/`plan_legs`/`plan_cache` in Phase 3;
-`plan_edits` in Phase 5; `memories`/`place_reports` in Phase 6;
+`intake_cache` in Phase 3b; `plan_edits` in Phase 5; `memories`/`place_reports` in
+Phase 6; the `community_*`/`quarantined_at` columns in Phase 6b;
 `placement_events`/`is_partner`/`partner_tier` in Phase 10). Same "one phase at a
 time" discipline CLAUDE.md applies to app code, applied to the database.
+
+> **`transit_fares.is_per_person` is the exception** — it lands with the Phase 2
+> per-person fix rather than waiting, because Phase 2 already computes fares and
+> would otherwise double a tricycle special trip that only ever charges once.
 
 ---
 
@@ -435,8 +504,20 @@ row; it never duplicates it.
 ## 7. AI pipeline
 
 ```
+0. EXTRACT     Free text -> the step-1 record. Gemini Flash, responseSchema, no
+               retrieval, no candidate rows in the prompt. Emits constraint
+               VALUES ONLY — never a place or activity name (invariant 1).
+               Validated before it goes anywhere: budget must parse to an
+               integer, origin must match a known barangay, times must resolve.
+               Anything unrecognised is asked about, never guessed.
+               Cached in intake_cache on normalised text.
+               SKIPPED ENTIRELY when the user taps a chip — a chip already is a
+               structured value, so the common path is also the free one.
+
 1. INTAKE      { budget_cents, window_start, window_end, origin_lat, origin_lng,
                  companion_type, occasion, owned_resource_ids[], mobility }
+               Shown back to the user as editable chips. Everything below this
+               line is identical whether the record came from step 0 or a chip.
 
 2. CACHE       hash rounded constraints (budget → nearest 50, location → ~500m grid,
                time → morning/afternoon/evening, owned_resource_ids → sorted
@@ -467,6 +548,19 @@ row; it never duplicates it.
 ```
 
 Runs in a Supabase Edge Function. The Gemini key never reaches the device.
+
+**Why step 0 does not break the cache.** §7 step 2 calls the constraint hash "the
+primary cost control", and free text cannot be hashed stably — two people asking
+the same thing in different words would miss every time. The split above is what
+preserves it: step 0 reduces language to the *same record step 1 always used*, so
+step 2 hashes exactly what it hashed before. Conversation is confined to one
+cheap, retrieval-free call at the front.
+
+Two model calls now exist per new utterance rather than one, which is a real
+increase against a free tier. Three things hold it down: starter chips skip step 0
+completely, `intake_cache` absorbs repeat phrasings, and `plan_cache` still
+absorbs repeat *constraints* regardless of the words that produced them. Watch the
+quota at Phase 3b — this is managed, not solved.
 
 ---
 
@@ -581,10 +675,46 @@ Edge function, `responseSchema`, validation layer, rejection logging, plan_cache
 *Accept:* 20 consecutive generations produce zero invalid IDs; every total matches an
 independent SQL recomputation exactly; second identical request is a cache hit.
 
+> **Driven by Phase 2's structured intake, not by chat.** The conversational
+> layer is Phase 3b. Keeping them apart means generation is proven against a
+> fixed, boring input before anything is asked of language understanding — if a
+> plan comes back wrong here, it is the pipeline, and there is no second suspect.
+
+**Phase 3b — Conversational intake**
+Extraction Edge Function (§7 step 0), intake validation, `intake_cache`, and the
+chat UI: starter chips, a message thread, and editable constraint chips.
+*Accept:* a typed request produces correct chips; correcting a chip re-plans;
+the same request phrased differently is an `intake_cache` hit; and extraction
+never yields a place or activity name across 20 varied utterances, including
+adversarial ones ("take me to Starbucks in Manila").
+
+> **Numbered 3b rather than renumbering 4–10.** One insertion is not worth
+> rewriting every phase reference across three documents.
+>
+> **The structured intake stays.** Chat is a shell over it, not a replacement:
+> the record in §7 step 1 remains the contract, so a failure in extraction
+> degrades to "ask with chips" rather than to a dead product, and the Phase 2
+> screen survives as the dev and test surface underneath.
+
 **Phase 4 — Plan experience**
 `flutter_map` with numbered stops, dashed walk legs, solid ride legs, per-leg fares,
-vertical timeline, cost breakdown, save.
-*Accept:* generate, save, reopen, and read a plan while walking around.
+vertical timeline, cost breakdown, save. Tapping a stop opens place detail:
+`place_notes`, contact, social link, price range and hours. DIY activities show
+their `tutorial_url` as an embedded player.
+*Accept:* generate, save, reopen, and read a plan while walking around; a stop's
+notes are readable from the plan; a DIY activity plays its tutorial in-app.
+
+> **`place_notes` had no renderer until now.** The table has existed since Phase 0
+> and the field checklist collects it, but no phase displayed it — which quietly
+> undercut D2's claim to replace the Reddit tab. Surfacing it here closes that.
+>
+> **Embedding needs a dependency** (`youtube_player_iframe` over the older
+> `youtube_player_flutter`; it builds on the official `webview_flutter`). Check
+> the Kotlin Gradle Plugin situation before adding it — that is what got
+> `flutter_image_compress` removed at Phase 0. Keep an "open in YouTube" fallback
+> via `url_launcher`, already installed: it is the only thing that works when a
+> video is embed-disabled, which the field checklist now screens for at collection
+> time.
 
 **Phase 5 — Editing**
 Reorder, remove, retime, add a custom stop. Legs and totals recompute. `plan_edits`
@@ -594,17 +724,55 @@ user-added place does not appear in another account's generated plans.
 
 **Phase 6 — Completion & actuals**
 Mark complete. Photo (compressed to ~150 KB), caption, actual spend, actual fare,
-rating. Writes a `memory` and a `place_report`. Memory timeline screen.
+rating. Writes a `memory`, **one `place_report` per stop**, and
+`plan_legs.actual_fare_php_cents`. Memory timeline screen.
+
+> **One report per stop, not one per plan.** Phase 6b corrects prices per place,
+> and a single plan-level spend figure cannot be attributed back to the café that
+> was wrong. Getting this shape right here is the difference between 6b being
+> possible and 6b needing a data migration.
+>
+> `place_reports` carries `created_at` and `plan_id` from the start — a report
+> that cannot be aged is worthless to 6b, and one that cannot be tied to a real
+> visit cannot be trusted by it.
+>
+> **A "this was closed" action ships here too**, available from an *active* plan
+> rather than a completed one. A couple who finds a locked door abandons the plan,
+> so requiring completion would blind us to exactly the failure that matters most
+> (§10.2).
 
 > `flutter_image_compress` was installed at Phase 0 and removed again: it applies
 > the Kotlin Gradle Plugin, which future Flutter versions refuse to build, and
 > nothing imported it. Re-add it when this phase starts — checking first whether
 > it has migrated to Built-in Kotlin, and picking an alternative if not.
-*Accept:* completing a plan produces a memory and updates price ground truth.
+*Accept:* completing a plan produces a memory and one report per stop, and a
+closure can be reported from an active plan without completing it.
 
 --- MVP ends here. Ship it. Use it for a month before deciding anything else. ---
 
+**Phase 6b — Ground truth correction**
+The rules in §10.5 made real: `community_price_*` and `quarantined_at` columns,
+the median-of-3-at-20% price override, the 2-closures-in-30-days quarantine, the
+one-report-per-user-per-place-per-30-days cap, `plan_cache.places_version`
+invalidation, and provenance labelling in the UI.
+
+*Accept:* a seeded price with 3 divergent reports is overridden and shows as
+community-corrected; nulling the community column restores the seeded value
+exactly; a place with 2 closure reports disappears from retrieval and appears in a
+review list; one user reporting ten times moves nothing.
+
+> **Gated on report volume, not on code readiness.** Building this before there is
+> data to correct is building a thermostat for an empty room. It cannot start
+> until Phase 6 has produced a real corpus of reports, which at single-digit users
+> will take months — see §10.5's closing point about the seed being the entire
+> product for the whole MVP window.
+
 **Phase 7 — Community** (publish completed plans, browse by budget, "tried this")
+
+> **A filtered list, not a chronological feed** — settled in §9. Cards are
+> photo-forward per `02-design-system.md`, but rank by budget fit, because ranking
+> specifies behaviour: rank by recency and people optimise for photos, which costs
+> the structured price data that makes a shared plan worth more than a picture.
 **Phase 8 — Weather-aware replanning**
 **Phase 9 — Next.js SEO site**
 **Phase 10 — Local business placements**
@@ -626,6 +794,30 @@ Phase 0 seed data exists — see the note under D1.*
 A separate "free date" flow would imply ₱0 is a lesser product, which contradicts the
 stated "budget-agnostic, never shame the user" principle. Same retrieval and
 composition path, same UI, one slider that allows zero.
+
+**Intake is a conversation, not a form — decided against the recommendation.**
+The docs originally specified a structured form throughout: §7's intake was a
+typed record, §9 rejected free text for `occasion`, and the design system
+enumerated screens with no conversation among them. That was argued for and
+overruled deliberately, so both sides are recorded here.
+
+*For the form:* cheaper, no blank-page problem, hashes trivially for the cache,
+nothing to build. *Against it:* it cannot express occasion or mood — "our
+anniversary, but she's been stressed, so somewhere quiet" — and that is precisely
+the signal separating a good suggestion from a merely valid one. A form can only
+ever ask what it thought of in advance.
+
+*The objection that mattered* was cache economics, since §7 step 2 is the only
+cost control keeping this on a free tier. It is answered structurally, not by
+optimism: **free text is reduced to the existing constraint record before
+anything is hashed** (§7 step 0), so step 2 hashes what it always hashed.
+Conversation is quarantined to one cheap, retrieval-free call at the front, and
+tapped chips skip even that.
+
+*What is not conceded:* the model still never sources a fact. Extraction emits
+constraint values only and is validated like any generated plan — invariant 1 is
+unchanged, and D2 is unchanged. The interface became conversational; the facts
+did not.
 
 **Intra-barangay fares — collect the rows; never widen the walk threshold.**
 Two places in one barangay more than 800 m apart had no fare, and in a walkable
@@ -658,3 +850,389 @@ bucket but owning different equipment could collide and receive a plan requiring
 they don't have. Occasion needs a coarse bucket (casual/special, not free text) for
 the same reason. `companion_type` doesn't need to vary yet — MVP is single-persona
 (couples only).
+
+> **Still true once intake is conversational.** The user now types "it's our
+> anniversary", but §7 step 0 reduces that to the same coarse bucket before it
+> reaches the cache key. Free text is what the user writes, never what gets
+> hashed — that distinction is the whole reason the conversation is affordable.
+> The full utterance may still colour composition (step 4); it must never enter
+> the key.
+
+**Prices and fares are per person; totals multiply by party size.**
+Nothing stated this, and the two halves of the codebase had drifted apart: the
+field checklist defined `price_min` as "one drink, one serving" while
+`build_simple_plan` summed those and labelled the result the plan total — so a
+couple's real cost was up to double what the app displayed. Per person wins
+because it is the only unit that survives the persona expansion in §11: a
+per-couple price would have to be re-collected the day friends or families
+arrive. The budget keeps meaning what a couple means by it — ₱200 for the date,
+not each — so the multiplication happens in the composer, not in the user's head.
+Fares are not uniform: a jeepney charges per passenger, a tricycle special trip
+is one flat fare for the vehicle, hence `transit_fares.is_per_person`.
+
+**Community is a filtered list, not a chronological feed.**
+"Find a plan I can afford" is a query, and a feed structurally cannot answer it.
+Cards stay photo-forward per `02-design-system.md`, but rank by budget fit.
+The decisive argument is that **ranking specifies behaviour**: rank by recency and
+photos and people optimise for photos, which costs the structured price data that
+makes a shared plan worth more than a picture. A feed also looks dead at four
+users where a filtered list still answers a question, and it creates a
+location-plus-time-plus-identifiable-couple surface that a list of plans does not.
+Note that CLAUDE.md's "Explicitly NOT building yet" list already said
+"community feed" — this records the reasoning behind a line that was already
+there. The honest cost: a list is less fun, and less likely to spread.
+
+---
+
+## 10. Seed-data doctrine
+
+Why 15 hand-verified rows beat 500 scraped ones, what breaks when a row is stale,
+and what may and may not produce one. Written down because the instinct to acquire
+data faster recurs, and the counter-argument is arithmetic rather than taste.
+
+### 10.1 Plan correctness is multiplicative
+
+A three-stop plan asserts roughly **fifteen volatile facts**: each stop exists, is
+open at that hour, costs what we said, and sits where we said; each leg costs what
+we said. If each fact is independently correct with probability *p*, the chance
+the whole plan is clean is *p¹⁵*:
+
+| per-fact accuracy | plans that are fully correct |
+|---|---|
+| 90% | **21%** |
+| 95% | 46% |
+| 99% | **86%** |
+
+**This is the answer to "what does it cost us if 10% of rows are quietly wrong".**
+Ten percent wrong rows is not a ten percent problem. Counting whole rows only, a
+three-stop plan is 0.9³ — **27% of plans contain a wrong row.** Roughly one date
+in four goes wrong, and the user cannot tell which in advance, so the rational
+response is to check everything before leaving the house. That is the five tabs
+this product exists to collapse. **A plan you have to verify is a plan that
+failed.**
+
+Accuracy is not a quality metric here. It is the product.
+
+### 10.2 What specifically breaks
+
+**Stale hours.** Retrieval promised "currently open". The couple pays a real,
+non-refundable fare and arrives at a locked door. The total was wrong too — they
+spent transport money for nothing.
+
+> **This error is self-concealing, which is what makes it the worst one.** They
+> abandon the plan, so it is never completed, so no `place_report` is written, so
+> the correction mechanism in §10.5 never learns. The failure with the highest
+> cost produces the least signal. Any correction design that ignores this
+> converges quietly on wrong data — see the asymmetry rule in §10.5.
+
+**Wrong price.** The budget filter admits a place the couple cannot afford. Being
+₱100 short at a counter is a specific, humiliating failure, and it happens in
+public. In a product whose entire promise is "under ₱X", a money error is not
+cosmetic — it is the promise breaking.
+
+**Wrong or missing barangay.** Silent: the place is still retrievable, but every
+leg touching it either prices wrongly or reports "fare not recorded".
+
+### 10.3 Why the data is the moat, and not the AI
+
+Gemini can generate Bocaue date ideas today, free, and so can every other model.
+What it cannot do — what nothing can do from a distance — is know that this café
+closed in March, that the tricycle from Turo is ₱25, or that the ₱180 on the menu
+is really ₱180.
+
+The rows are a **depreciating asset**. They decay whether or not anyone touches
+them, which is exactly why they cannot be acquired in bulk, and why a competitor
+who copies this schema in an afternoon still has nothing. The work is not
+collecting the data once; it is being the party that keeps re-verifying it.
+
+**Failure is asymmetric.** A place missing from the catalogue costs nothing — the
+user never knows it was absent. A place present and wrong costs the evening and
+the trust. Recall is cheap; precision is expensive. Every bulk-acquisition method
+optimises the cheap one.
+
+### 10.4 What may produce a row
+
+**Only a person who has been there.** `verification_tier = 'curated'` means
+someone stood at the door. Nothing else may set it.
+
+#### Web search is a research aid, never a source
+
+Search — including AI-assisted search over Reddit, Facebook and YouTube — may
+produce a **candidate list**: names, approximate areas, plausible hours. It may
+never produce a row in `places.csv`.
+
+*Is agreement across sources evidence?* **Mostly no.** Sources are correlated: a
+Facebook page, an aggregator, a blog post and a Reddit comment usually trace back
+to one origin, most often the business's own page, which is itself frequently
+stale. Agreement measures **copying, not truth**. A model's training data contains
+those same copies, so its confidence is that one signal counted again. Closed
+businesses also do not announce it, so the record is structurally biased toward
+places still existing.
+
+Agreement *is* reasonable evidence for **identity** — the name, the street, that
+the place once existed. It is near-worthless for **volatility** — current hours,
+current price, still open. Volatility is what Amora sells.
+
+*Could search detect a café that changed its hours last month?* **No.** No degree
+of agreement detects a change younger than the corpus. The only detectors are
+going there, phoning them, or a user reporting it. There is no clever answer here,
+and pretending otherwise is how a catalogue silently rots.
+
+*Does this violate invariant 1?* Precisely: **no.** Invariant 1 governs runtime
+composition, and offline research is not a runtime model call. Search output
+reaching `places.csv` unverified would violate **D3 and CLAUDE.md's hard rule
+against invented local data** — "plausible-looking invented rows" is exactly the
+artefact it produces. The research-aid form violates neither.
+
+#### The candidate workflow
+
+Candidates live in `supabase/seed/candidates/candidates.csv`, tracked in git so
+the research trail survives. Its columns are **deliberately incompatible** with
+`places.csv`: it carries `source_url` and `claimed_hours`, and carries no `slug`,
+`lat`, `lng`, `barangay` or `opening_hours`.
+
+That incompatibility is the enforcement, not a convention to remember.
+`csv_to_sql.mjs`'s `assertHeaders` refuses both unknown and missing columns, so
+pasting candidate rows into `places.csv` fails the import loudly — and the columns
+retrieval actually requires are precisely the ones a search cannot supply.
+
+A candidate becomes a row only once someone has visited and typed the row by hand,
+with `verified_on` set to the date of the visit. See
+`supabase/seed/candidates/README.md`.
+
+### 10.5 The seed is a hypothesis, corrected by use
+
+Seeded rows are the **initial state, not permanent truth**. Once Phase 6 captures
+what people actually spent, reports refine prices toward reality and flag places
+that have closed. That strengthens the ground-truth guarantee only if the
+correction mechanism is itself trustworthy, so its rules are specified here rather
+than left to intuition. Implementation is **Phase 6b**.
+
+**Correction is additive, never destructive.** A community-corrected price lands
+in its own columns; the hand-verified value is never overwritten. A bad correction
+is reverted by nulling one column, and `verification_tier` keeps meaning what it
+means — the *row's* provenance, not a field's. Overwriting the seed would erase
+the moat one row at a time, quietly.
+
+**Thresholds are asymmetric, because the costs are.**
+
+| | Rule | Why these numbers |
+|---|---|---|
+| **Closure** | 2 reports from different users within 30 days → **quarantine** | Not 1: a single report is trivially griefable, and is often just someone arriving after hours. Not 3: a place closed for a month keeps ruining dates. 30 days because an unconfirmed report from eight months ago is noise. Quarantine excludes from retrieval and raises a flag — **it never deletes**. |
+| **Price** | ≥3 reports, take the **median**, override only if it differs from the seed by **>20%** | Median so a single outlier cannot move it. Three is the minimum for a median to mean anything. Below 20% it is people ordering different things, not drift: ₱180 seeded against a ₱195 median is the same café. |
+
+**Anti-gaming:** one report per user per place per 30 days; median never mean; and
+*price* reports count only from a **completed** plan, which raises the cost of
+gaming from typing to travelling. At MVP scale the honest statement is that
+adversaries are not the threat — **sample size is**. These rules mostly defend
+against noise.
+
+> **The asymmetry that matters.** Requiring a completed plan protects prices but
+> would blind us to closures, because a couple who finds a locked door abandons
+> the plan and never completes it — the self-concealing failure from §10.2. So
+> **closure reports do not require a completed plan**; a "this was closed" action
+> is available from an active one. Price reports keep the stricter rule.
+
+**A corrected value stays visibly distinct from a verified one.** The user sees
+"₱180 · verified" or "₱180 · reported by 4 people". Hiding the difference would
+make the catalogue's weakest rows indistinguishable from its strongest.
+
+**This does not lower the bar for hand collection — it raises it.** The loop needs
+completed plans, and a wrong seed prevents completion: the user abandons, no
+report is written, nothing is corrected. The feedback is positive on quality, not
+negative — bad rows are not fixed by use, they are abandoned and stay bad.
+With 15 rows and single-digit users there will be roughly zero reports for months,
+so **the seed is the entire product for the whole MVP window.** Fifteen
+hand-verified rows remains the target.
+
+---
+
+## 11. Persona expansion
+
+D1 scopes the MVP to couples. Friends and then families follow, and CLAUDE.md
+forbids building either now. What this section fixes is the small set of decisions
+that would force a **rewrite** rather than an addition if they were made
+couple-shaped today.
+
+**Already agnostic:** `plans.companion_type`, `resource_catalog`, `memories`,
+`place_reports`, and the whole retrieval path — none of them encode "two people".
+
+**Made agnostic by the per-person pricing decision (§9).** `places` and
+`activities` prices mean one person's spend at every party size, and
+`plans.party_size` carries the multiplier. Had prices been stored per couple, every
+row would need re-collecting the day a family used the app. This is the single
+decision in this section that had a real deadline, because the seed data is being
+collected now.
+
+**Not yet agnostic, and deliberately deferred:**
+
+- `places` has no capacity or group-size field. A café that seats two is not a
+  café that seats eight. Add it when friends ship; it changes no existing row.
+- `02-design-system.md` justifies the rose seed colour by "the MVP is for
+  couples". The palette itself is fine, but that *justification* does not survive
+  families — restate it as a brand choice before the persona widens, or it becomes
+  an argument for a redesign nobody wants.
+
+---
+
+## 12. Scope boundary
+
+Written to be quoted, not re-argued. Three cases keep coming up:
+
+| | Case |
+|---|---|
+| **A** | Bocaue, ₱200, Saturday evening — the current MVP |
+| **B** | Bulacan to Manila day trip — bus, MRT, jeep, all verifiable fares |
+| **C** | Cebu to Manila, 7-day staycation — flights, hotel, multi-day |
+
+**A and B are the same product. C is a different one.** Not bigger — different in
+kind, along four axes:
+
+### 12.1 What actually separates C from A
+
+**Facts versus inventory.** A café's price is a *fact about the café*: stable for
+weeks, true for everyone, verifiable by standing there. A hotel room's price on
+March 3rd is not a fact about the hotel — it is a function of demand at query
+time, different for every user, and stale the moment it is written down. Amora's
+entire architecture rests on `verification_tier = 'curated'` meaning *a person
+checked this*. **You cannot hand-verify a number that changes hourly.**
+
+**Reversibility.** A wrong ₱180 café costs an evening. A wrong hotel booking costs
+thousands of pesos and is not refundable. Amora deliberately ships incomplete
+totals labelled "at least ₱X" (§10.5) because an admitted gap beats a guess — a
+tolerance that is fine for a Saturday and indefensible for a booking.
+
+**Who knows the ground.** In A the user knows Bocaue; what they lack is which
+place is open and what it costs. In C the user knows nothing about the
+destination, so the product would have to supply everything — logistics, safety,
+sequencing across days. That is a travel agency, not a planner.
+
+**Verification economics.** D3 works because 200–300 places in one municipality
+can be verified, and re-verified as they decay, by one person on a bicycle. A
+multi-city week needs live inventory in cities nobody can visit. The unit
+economics that make the moat possible are the same ones that make C impossible.
+
+> **The line, in one sentence: Amora plans *time within a place you are already
+> in*. Travel products plan *movement between places you are not in yet*.**
+
+Note that CLAUDE.md's "Explicitly NOT building yet" list already reads
+"flights · hotels · reservations". This section records why, so the line stops
+being rediscovered.
+
+### 12.2 For C, the moat is worth nothing — confirmed
+
+The suspicion is correct, and the reason is worth stating exactly.
+
+Competitors would be Agoda, Booking, Traveloka, Klook, Skyscanner and Google
+Travel, plus every general AI assistant, which drafts itineraries for free today.
+
+Our moat is *hand-verified local facts nobody else has*. For flights and hotels
+the facts are **published, real-time and API-accessible to everyone** — there is
+no informational asymmetry left to own. Worse, the asymmetry inverts: incumbents
+hold live inventory, we would hold a stale hand-typed copy, so we would be
+strictly worse rather than merely undifferentiated. Their actual moat is
+supply-side contracts and inventory access, which costs money and legal
+agreements — precisely what D7 forbids.
+
+And the one thing we *would* know:
+
+| | ₱200 Bocaue date | ₱15,000 week-long trip |
+|---|---|---|
+| A ₱25 tricycle fare is… | **12% of the budget** | **0.17% of the budget** |
+
+**At C-scale our differentiator becomes a rounding error.** At A-scale it is the
+entire decision. That single comparison is the whole argument.
+
+### 12.3 B is in scope, and it is additive
+
+Day trips are the same product: verifiable fares, no accommodation, no dynamic
+pricing, one session, recoverable if wrong. Nothing about B violates D3, D5 or
+invariant 1.
+
+**It needs no schema change before Phase 4.** The three specific worries, answered:
+
+**Town-to-town fares.** `transit_fares.from_area` / `to_area` are plain text with
+nothing constraining them to barangays — and the seed *already* contains `Marilao`
+and `Balagtas`, which are municipalities, not Bocaue barangays. The table handles
+mixed granularity today.
+
+The real gap is subtler and is in the *lookup*, not the schema: `build_simple_plan`
+calls `fare_for(prev_area, candidate.barangay, …)`, so an inter-city leg would ask
+for `Poblacion → Ermita` and find nothing, when the route that exists is
+`Bocaue → Manila`. The fix when B arrives is for `fare_for` to walk up
+progressively coarser keys — barangay, then town, then region — and that is a
+function change, which is cheap. **Do not add a locality hierarchy now.**
+
+**Chained journeys (bus → MRT → jeep).** `plan_legs` carries one `mode` and one
+`fare_php_cents` per row, so it genuinely cannot express three modes in one leg.
+The fix is a `plan_leg_segments` child table, which is purely additive — existing
+rows keep meaning what they mean.
+
+The only cost is in the UI, and it is avoidable for one sentence: **Phase 4's leg
+row must not bake "exactly one mode per leg" into its API.** Render a leg from a
+list of segments that today happens to have length one. That costs nothing now and
+saves a rewrite later. Recorded in `02-design-system.md` §5.
+
+**MRT/LRT distance-based fare matrices.** These need no new mechanism at all. A
+fare *matrix* is a set of point-to-point rows — MRT-3 is 13 stations, LRT-1 is 20,
+so the whole thing is a few hundred rows the existing table already models. They
+are also **published at every station**, so reading the official matrix *is*
+verification; nobody has to ride all 190 pairs. They are always per passenger
+(`is_per_person = true`), and if the stored-value-card rate differs from the
+single-journey rate, that is two rows, not a new concept.
+
+### 12.4 The version of C that *is* Amora
+
+There is one, and it is not an expansion.
+
+**"You are in Manila for a week — here is day 3 with ₱500" is exactly case A**
+with a different `city` value. Same retrieval, same composer, same invariants,
+same UI. The user is already there, the budget is for one day, the facts are
+places and fares.
+
+**"Plan my Cebu trip" is case C** and stays out.
+
+The line between them is the same one from §12.1: planning *a day where you are*
+versus planning *the trip that gets you there*.
+
+The useful consequence: **reaching Manila is a data problem, not a product
+problem.** No new features, no schema, no phase — just curated rows for another
+city, which is D3 again. Every hour spent designing multi-city features is an hour
+not spent on the only thing that actually unlocks them.
+
+### 12.5 Coverage, and what an uncovered user sees
+
+**The app ships nationwide; only the data is Bocaue.** Nothing in the code is
+city-specific — `places.city` is a plain column and every query is generic — so a
+build installed anywhere works, and finds nothing.
+
+Today this is not yet live: distribution is `flutter run` and hand-passed APKs
+(D7), and profile setup *fixes* city to Bocaue with the line "The only area Amora
+knows well, for now." There are no uncovered users because every user was handed
+the app personally.
+
+**It becomes live the moment an APK reaches someone you did not hand it to.**
+That is a release gate, not a phase:
+
+- **Say it plainly, before onboarding finishes.** "Amora only knows Bocaue,
+  Bulacan so far." A user who learns this after signing up and getting nothing
+  concludes the app is broken; a user who learns it first concludes it is honest.
+- **Never show a bare empty result screen** — already required by
+  `02-design-system.md` §5, and this is the case that will violate it first.
+- **Capture where they are, in one tap.** It is the only signal that answers
+  "which city next", and it is worth more than a signup.
+- Let them browse Bocaue if they want. Curiosity is not a bug.
+
+**Should uncovered users add their own places?** RLS already permits it safely —
+user-submitted rows are quarantined to their submitter (invariant 5), so there is
+no risk to the shared catalogue. **But it should not be the answer to coverage.**
+
+A user entering their own café and then being shown it back has not been given
+Amora; they have been given a notes app with extra steps. The promise is *we
+already know this place is open and costs ₱180*, and self-entered data cannot
+deliver it — they already knew. It also inverts onboarding: the unglamorous
+cataloguing work that D3 says takes one person weeks would become the price of
+admission for a stranger.
+
+User-submitted stops stay what Phase 5 already says they are: **a way to add a
+missing stop inside a covered city**, not a coverage strategy.
