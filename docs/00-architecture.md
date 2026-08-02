@@ -641,6 +641,19 @@ the "runs on the physical device" rule before Phase 4's real UI exists.
 400 ms. **This phase proves the moat before any AI is involved. If the output here
 isn't useful, the AI won't save it.**
 
+> **₱200 here means the couple's whole budget — ₱100 a head.** This criterion was
+> written before prices were defined as per person (§9), when the filter was
+> `price_min <= budget`. It is now `price_min <= budget / party_size`, so the same
+> sentence is materially stricter than when it was written: a ₱180 café that would
+> once have passed is now excluded. That tightening was a side effect, not a
+> decision, so it is recorded rather than left to surprise someone.
+>
+> **Run the acceptance check at ₱200 and again at ₱600.** If ₱200 returns almost
+> nothing but ₱600 works, retrieval is fine and the finding is about Bocaue's real
+> price floor — which is worth knowing and is not a Phase 2 failure. If ₱600 also
+> returns nothing, the problem is retrieval or the data. Separating those two is
+> the entire point of running both.
+
 > **"Under 400 ms" means server execution time.** Measured at 11.9 ms on the seed
 > data. End-to-end from the device also carries a Manila↔Tokyo round trip, which
 > nothing in this phase can reduce; the screen shows the round-trip figure so both

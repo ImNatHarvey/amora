@@ -6,24 +6,33 @@ CSVs get filled in at a desk afterwards.
 
 Formats and the full grammar live in `README.md`. This file is the field copy.
 
-**Target: 15 places.** See "Spread" at the bottom — *where* they are matters as
-much as how many.
+**Target: 15 places.** Read **"Spread"** before deciding where to go — *where*
+they are matters as much as how many, and getting it wrong means no fare is ever
+exercised by a real plan.
+
+On this page: the three silent breakers · per place · where leads come from ·
+per fare ride (incl. the **riding list**) · DIY tutorial videos · spread ·
+at the desk afterwards.
 
 ---
 
-## ⚠️ The two columns that break things silently
+## ⚠️ The three columns that break things silently
 
-Neither of these errors out. Both just make a place quietly wrong or absent, and
-you will not notice until you are back at the desk wondering where a row went.
+None of these errors out. They just make a row quietly wrong or absent, and you
+will not notice until you are back at the desk wondering where something went.
 
 1. **Blank `barangay` → the place can be retrieved but never costed.** Every leg
    touching it reads "fare not recorded", because barangay is the only key fares
    have.
 2. **Blank `opening_hours` → the place is never retrieved at all.** Retrieval
    promises "currently open", and unverified hours cannot support that promise.
+3. **Wrong `is_per_person` on a fare → every plan using that route is out by
+   2×**, in whichever direction. A jeepney is `true`, a tricycle special trip is
+   `false`, and nothing about the number itself reveals which you meant.
 
-If you cannot verify both for a place, **leave it out of the CSV entirely** and
-come back to it. A missing row is a known gap; a half-filled row is a silent one.
+If you cannot verify a place's barangay *and* hours, **leave it out of the CSV
+entirely** and come back to it. A missing row is a known gap; a half-filled row is
+a silent one.
 
 ---
 
@@ -118,7 +127,21 @@ whole fare. Getting this backwards doubles or halves every plan that uses the
 route, silently.
 
 If a tricycle route has both a regular per-passenger rate and a special-trip rate,
-record the one a couple would actually pay and note the other in the notes.
+**record the one a couple would actually pay**, set `is_per_person` to match *that*
+rate, and note the other in the notes.
+
+### New routes to collect
+
+- **One row per barangay for itself** — `Poblacion, Poblacion, tricycle, ...`.
+  Same-barangay rows are legal and already resolve; nothing needs changing.
+- **Also note how far you rode.** Not a database column — it settles a design
+  question. If a 900 m hop and a 2.5 km hop inside one barangay cost the same,
+  a flat row per barangay is correct permanently. If they differ, the fare model
+  needs distance bands and we should talk before you collect more.
+- If the TODA terminal has a **posted tariff board, photograph it.** A published
+  local rate is curated data and may cover every short leg in one go.
+- Legs under 800 m are computed as a free walk and never looked up — don't
+  bother riding those.
 
 ### ⚠️ Riding list — 9 tricycle rows to confirm
 
@@ -147,19 +170,9 @@ records that anyone has ridden them at all.
 
 The **6 jeepney rows need no check**: a jeepney always charges per passenger.
 
-- **One row per barangay for itself** — `Poblacion, Poblacion, tricycle, ...`.
-  Same-barangay rows are legal and already resolve; nothing needs changing.
-- **Also note how far you rode.** Not a database column — it settles a design
-  question. If a 900 m hop and a 2.5 km hop inside one barangay cost the same,
-  a flat row per barangay is correct permanently. If they differ, the fare model
-  needs distance bands and we should talk before you collect more.
-- If the TODA terminal has a **posted tariff board, photograph it.** A published
-  local rate is curated data and may cover every short leg in one go.
-- Legs under 800 m are computed as a free walk and never looked up — don't
-  bother riding those.
-
-Existing inter-barangay rows already cover all six pairs among Poblacion, Turo,
-Bunlo and Lolomboy. They need no re-collection, only `verified_at` once ridden.
+**The fares themselves are correct and need no re-collection** — all six barangay
+pairs among Poblacion, Turo, Bunlo and Lolomboy are already covered. The only
+things missing on these nine rows are `is_per_person` and `verified_at`.
 
 ---
 
@@ -262,9 +275,15 @@ where not exists (
      or (f.from_area = y.barangay and f.to_area = x.barangay));
 ```
 
-5. `flutter run` on the device, ₱200 from a real barangay. Three real,
-   currently-open places with costed legs **is Phase 2's acceptance criterion** —
-   that run is what closes the phase.
+5. `flutter run` on the device and build a plan from a real barangay — **once at
+   ₱200 and once at ₱600.** Three real, currently-open places with costed legs
+   **is Phase 2's acceptance criterion**, and that run is what closes the phase.
+
+   Run both because ₱200 is the *couple's* budget, so retrieval only admits places
+   at ₱100 a head. If ₱200 returns almost nothing but ₱600 works, retrieval is
+   fine and you have learned something real about Bocaue's price floor. If ₱600
+   returns nothing either, the problem is the data or the query. Two runs turn an
+   ambiguous failure into a diagnosis.
 
 Re-running the import after editing a row updates that row; it never duplicates.
 Editing a price and re-importing is the normal way to correct data.
