@@ -61,6 +61,11 @@ class HomeScreen extends ConsumerWidget {
               ),
               SizedBox(height: tokens.lg),
               FilledButton(
+                onPressed: () => context.push(Routes.plan),
+                child: const Text('Plan something'),
+              ),
+              SizedBox(height: tokens.sm),
+              OutlinedButton(
                 onPressed: () => context.push(Routes.devTokens),
                 child: const Text('View design tokens'),
               ),

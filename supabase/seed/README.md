@@ -32,11 +32,21 @@ mon-sun 10:00-22:00
 mon-fri 10:00-22:00; sat-sun 08:00-23:00
 mon,wed,fri 17:00-21:00
 mon-sun 24h
+fri-sat 18:00-02:00
 ```
 
 Days are `mon tue wed thu fri sat sun`. Ranges (`mon-fri`), lists (`mon,wed`), and
 segments separated by `;` all work. **Omit days the place is closed** — a day that
 is never mentioned is closed.
+
+**A closing time earlier than the opening time wraps past midnight.**
+`fri-sat 18:00-02:00` is Friday and Saturday evening, each running until 2am the
+next morning. Record the day the place *opens* — write `fri 20:00-02:00`, never
+`sat 00:00-02:00`. Amora plans evenings, so a place that shuts at 1am is a normal
+row here, not an edge case.
+
+Writing the same time twice (`10:00-10:00`) is rejected: it could mean closed all
+day or open all day, and neither guess is safe. Use `24h`, or omit the day.
 
 **Required resources** on an activity are pipe-separated slugs from
 `resource_catalog.csv`, e.g. `picnic-mat|speaker`. Leave blank if none. An unknown

@@ -1,0 +1,113 @@
+import '../util/manila_time.dart';
+
+/// When a place is open, as stored in `places.opening_hours`.
+///
+/// The shape is `{"fri": [["18:00", "02:00"]], ...}` — each day holding a list
+/// of ranges, written by `supabase/seed/csv_to_sql.mjs`. Days that are absent
+/// are closed.
+///
+/// A range whose closing time is earlier than its opening time wraps past
+/// midnight and belongs to the day it *opens*: `fri 18:00-02:00` runs into
+/// Saturday morning. Nothing here has to resolve that — `public.is_open_at`
+/// already decided whether the place is open before it was ever returned. This
+/// type exists only so the screen can show the hours a user can check against
+/// the real world.
+class OpeningHours {
+  const OpeningHours(this._byDay);
+
+  factory OpeningHours.fromMap(Map<String, dynamic> map) {
+    return OpeningHours({
+      for (final entry in map.entries)
+        entry.key: [
+          for (final range in entry.value as List)
+            (
+              opens: (range as List)[0] as String,
+              closes: range[1] as String,
+            ),
+        ],
+    });
+  }
+
+  final Map<String, List<({String opens, String closes})>> _byDay;
+
+  bool get isEmpty => _byDay.isEmpty;
+
+  /// The ranges recorded for [manilaLocal]'s day, empty when closed.
+  List<({String opens, String closes})> on(DateTime manilaLocal) =>
+      _byDay[dayKey(manilaLocal)] ?? const [];
+
+  /// `09:00–22:00`, or `09:00–22:00, 14:00–18:00` for a split day.
+  ///
+  /// Returns null when nothing is recorded for that day, so callers can choose
+  /// their own wording rather than being handed an empty string.
+  String? describe(DateTime manilaLocal) {
+    final ranges = on(manilaLocal);
+    if (ranges.isEmpty) return null;
+    if (ranges.length == 1 &&
+        ranges.first.opens == '00:00' &&
+        ranges.first.closes == '24:00') {
+      return 'open 24 hours';
+    }
+    return ranges.map((r) => '${r.opens}–${r.closes}').join(', ');
+  }
+}
+
+/// A curated place in the local database — the moat (docs D3).
+///
+/// Read-only to the app in Phase 2. User-submitted places land in Phase 5 and
+/// are quarantined by RLS when they do.
+class Place {
+  const Place({
+    required this.id,
+    required this.slug,
+    required this.name,
+    required this.category,
+    required this.lat,
+    required this.lng,
+    required this.priceMinPhpCents,
+    this.barangay,
+    this.priceMaxPhpCents,
+    this.openingHours,
+  });
+
+  factory Place.fromMap(Map<String, dynamic> map) {
+    return Place(
+      id: map['place_id'] as String,
+      slug: map['slug'] as String,
+      name: map['name'] as String,
+      category: map['category'] as String,
+      barangay: map['barangay'] as String?,
+      lat: (map['lat'] as num).toDouble(),
+      lng: (map['lng'] as num).toDouble(),
+      priceMinPhpCents: map['price_min_php_cents'] as int,
+      priceMaxPhpCents: map['price_max_php_cents'] as int?,
+      openingHours: switch (map['opening_hours']) {
+        final Map<String, dynamic> hours => OpeningHours.fromMap(hours),
+        _ => null,
+      },
+    );
+  }
+
+  final String id;
+
+  /// Stable natural key. Re-importing an edited seed CSV updates this row
+  /// rather than inserting a second one.
+  final String slug;
+  final String name;
+
+  /// `cafe`, `park`, `viewpoint`, `florist`, `market`, ...
+  final String category;
+  final String? barangay;
+  final double lat;
+  final double lng;
+
+  /// The cheapest a visit here realistically costs. Zero is a real, common
+  /// answer — a park costs nothing, and the design system says never to grey
+  /// that out (docs 02 §2).
+  final int priceMinPhpCents;
+  final int? priceMaxPhpCents;
+
+  /// Null when nothing has been recorded yet. Such a place is never retrieved,
+  /// because "currently open" cannot be promised about hours nobody verified.
+  final OpeningHours? openingHours;
+}

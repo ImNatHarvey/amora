@@ -1,8 +1,10 @@
 import 'package:mobile/data/auth_repository.dart';
 import 'package:mobile/data/profiles_repository.dart';
 import 'package:mobile/data/resources_repository.dart';
+import 'package:mobile/data/retrieval_repository.dart';
 import 'package:mobile/models/profile.dart';
 import 'package:mobile/models/resource.dart';
+import 'package:mobile/models/simple_plan.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// In-memory stand-ins for the repositories, so widget tests exercise real
@@ -99,5 +101,59 @@ class FakeResourcesRepository implements ResourcesRepository {
   @override
   Future<void> replaceMine(Set<String> resourceIds) async {
     owned = {...resourceIds};
+  }
+}
+
+class FakeRetrievalRepository implements RetrievalRepository {
+  FakeRetrievalRepository({List<OriginArea>? areas, this.plan, this.error})
+      : areas = areas ?? defaultAreas;
+
+  static const defaultAreas = <OriginArea>[
+    OriginArea(area: 'Poblacion', lat: 14.7966, lng: 120.9268, placeCount: 9),
+    OriginArea(area: 'Turo', lat: 14.8003, lng: 120.9218, placeCount: 3),
+  ];
+
+  final List<OriginArea> areas;
+
+  /// Returned by [buildSimplePlan]. Null yields an empty plan, which is a real
+  /// outcome rather than a failure — nothing open that fits.
+  final SimplePlan? plan;
+
+  /// When set, [buildSimplePlan] throws it instead of returning.
+  final Object? error;
+
+  int buildCount = 0;
+
+  @override
+  Future<List<OriginArea>> originAreas(String city) async => areas;
+
+  @override
+  Future<SimplePlan> buildSimplePlan({
+    required String city,
+    required int budgetPhpCents,
+    required DateTime plannedForUtc,
+    required OriginArea origin,
+    required Set<String> ownedResourceIds,
+  }) async {
+    buildCount += 1;
+    if (error != null) throw error!;
+
+    return plan ??
+        SimplePlan(
+          plannedForUtc: plannedForUtc,
+          budgetPhpCents: budgetPhpCents,
+          originArea: origin.area,
+          radiusM: 5000,
+          stops: const [],
+          legs: const [],
+          totals: const PlanTotals(
+            placesPhpCents: 0,
+            faresPhpCents: 0,
+            totalPhpCents: 0,
+            unpricedLegs: 0,
+            isComplete: true,
+          ),
+          candidateActivities: const [],
+        );
   }
 }

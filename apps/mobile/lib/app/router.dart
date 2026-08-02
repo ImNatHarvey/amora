@@ -9,6 +9,7 @@ import '../features/dev/token_gallery_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/onboarding/profile_setup_screen.dart';
 import '../features/onboarding/resource_picker_screen.dart';
+import '../features/plan_request/plan_request_screen.dart';
 import 'auth_refresh.dart';
 
 /// Route paths, so no screen hardcodes a string literal.
@@ -18,6 +19,7 @@ abstract final class Routes {
   static const signUp = '/sign-up';
   static const onboardingProfile = '/onboarding/profile';
   static const onboardingResources = '/onboarding/resources';
+  static const plan = '/plan';
   static const devTokens = '/dev/tokens';
 }
 
@@ -122,6 +124,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.onboardingResources,
         builder: (context, state) => const ResourcePickerScreen(),
+      ),
+      // Not listed in _publicRoutes or _onboardingRoutes, so the ladder above
+      // already requires a session and finished onboarding to reach it — the
+      // resource picker has to have run before retrieval can filter on what
+      // the user owns.
+      GoRoute(
+        path: Routes.plan,
+        builder: (context, state) => const PlanRequestScreen(),
       ),
       GoRoute(
         path: Routes.devTokens,
