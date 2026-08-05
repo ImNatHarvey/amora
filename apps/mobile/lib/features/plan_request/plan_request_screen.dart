@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../models/plan.dart';
 import '../../models/simple_plan.dart';
 import '../../theme/app_tokens.dart';
+import '../../ui/error_retry.dart';
+import '../../util/format.dart';
 import '../../util/manila_time.dart';
+import 'generated_plan_view.dart';
+import 'plan_parts.dart';
 import 'plan_request_providers.dart';
 
 /// Phase 2's verification surface: budget in, costed plan out.
@@ -225,19 +228,19 @@ class _PlanRequestScreenState extends ConsumerState<PlanRequestScreen> {
                 loading: () => const SizedBox.shrink(),
                 error: (error, _) => Padding(
                   padding: EdgeInsets.only(top: tokens.md),
-                  child: _ErrorRetry(
+                  child: ErrorRetry(
                     message: '$error',
                     onRetry: () => ref.invalidate(generationControllerProvider),
                   ),
                 ),
                 data: (timed) => timed == null
                     ? const SizedBox.shrink()
-                    : _GeneratedView(timed: timed),
+                    : GeneratedPlanView(timed: timed),
               ),
               SizedBox(height: tokens.md),
               result.when(
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) => _ErrorRetry(
+                error: (error, _) => ErrorRetry(
                   message: '$error',
                   onRetry: () =>
                       ref.invalidate(planControllerProvider),
@@ -253,55 +256,6 @@ class _PlanRequestScreenState extends ConsumerState<PlanRequestScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// `₱180`, or `₱180.50` when the centavos are not round.
-///
-/// Money is integer centavos everywhere else in the app; this is the single
-/// point where it becomes text for a human.
-///
-/// Zero reads as "free" by default, which is the design system's position on ₱0
-/// — good news, never muted (docs 02 §2).
-///
-/// The rule, learned by reading all three wrong on a device: "free" belongs
-/// wherever ₱0 is *the price of something* — a place, a leg, a plan total. Pass
-/// [zeroIsFree] false wherever it is an addend in a breakdown or a constraint
-/// being echoed back, because "places ₱200 · fares free", "budget free" and
-/// "none fit free" all read as a category rather than an amount.
-String _pesos(int cents, {bool zeroIsFree = true}) {
-  if (cents == 0) return zeroIsFree ? 'free' : '₱0';
-  final pesos = cents ~/ 100;
-  final remainder = cents % 100;
-  return remainder == 0
-      ? '₱$pesos'
-      : '₱$pesos.${remainder.toString().padLeft(2, '0')}';
-}
-
-String _distance(int metres) =>
-    metres < 1000 ? '$metres m' : '${(metres / 1000).toStringAsFixed(1)} km';
-
-class _ErrorRetry extends StatelessWidget {
-  const _ErrorRetry({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          message,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.error),
-        ),
-        SizedBox(height: theme.tokens.sm),
-        OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
-      ],
     );
   }
 }
@@ -328,8 +282,8 @@ class _PlanView extends StatelessWidget {
             plan.radiusM == null
                 ? 'No curated place near ${plan.originArea} is open at '
                     '${formatManila(plannedFor)}.'
-                : 'Places were open within ${_distance(plan.radiusM!)}, but '
-                    'none fit ${_pesos(plan.budgetPhpCents, zeroIsFree: false)}.',
+                : 'Places were open within ${distance(plan.radiusM!)}, but '
+                    'none fit ${pesos(plan.budgetPhpCents, zeroIsFree: false)}.',
             style: theme.textTheme.bodyMedium,
           ),
         ],
@@ -347,16 +301,16 @@ class _PlanView extends StatelessWidget {
         SizedBox(height: tokens.xs),
         Text(
           '${formatManila(plannedFor)} · '
-          'budget ${_pesos(plan.budgetPhpCents, zeroIsFree: false)}'
-          '${plan.radiusM == null ? '' : ' · within ${_distance(plan.radiusM!)}'}'
+          'budget ${pesos(plan.budgetPhpCents, zeroIsFree: false)}'
+          '${plan.radiusM == null ? '' : ' · within ${distance(plan.radiusM!)}'}'
           ' · ${timed.elapsed.inMilliseconds} ms',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         SizedBox(height: tokens.md),
         for (var i = 0; i < plan.stops.length; i += 1) ...[
-          if (i < plan.legs.length) _LegLine(leg: plan.legs[i]),
-          _StopLine(
+          if (i < plan.legs.length) LegLine(leg: plan.legs[i]),
+          StopLine(
             stop: plan.stops[i],
             plannedFor: plannedFor,
             partySize: plan.partySize,
@@ -364,7 +318,7 @@ class _PlanView extends StatelessWidget {
         ],
         SizedBox(height: tokens.md),
         const Divider(),
-        _TotalsBlock(totals: plan.totals),
+        TotalsBlock(totals: plan.totals),
         if (plan.candidateActivities.isNotEmpty) ...[
           SizedBox(height: tokens.md),
           const Divider(),
@@ -378,261 +332,6 @@ class _PlanView extends StatelessWidget {
           Text(
             plan.candidateActivities.map((a) => a.title).join(' · '),
             style: theme.textTheme.bodySmall,
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-/// The generated plans, rendered as plainly as the Phase 2 output beside them.
-///
-/// No cards, no colour, no motion — Phase 4 designs this. Styling it now would
-/// make a model's answer look better than the crude builder's for reasons that
-/// have nothing to do with the answer.
-class _GeneratedView extends StatelessWidget {
-  const _GeneratedView({required this.timed});
-
-  final TimedPlanSet timed;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final tokens = theme.tokens;
-    final set = timed.plans;
-
-    if (set.isEmpty) {
-      return Padding(
-        padding: EdgeInsets.only(top: tokens.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('The model found nothing.', style: theme.textTheme.titleMedium),
-            SizedBox(height: tokens.sm),
-            Text(
-              'Every plan it produced was rejected, or no place was open and '
-              'affordable to build one from.',
-              style: theme.textTheme.bodyMedium,
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(height: tokens.md),
-        Text(
-          '${set.plans.length} generated '
-          '${set.plans.length == 1 ? 'plan' : 'plans'}',
-          style: theme.textTheme.titleMedium,
-        ),
-        SizedBox(height: tokens.xs),
-        Text(
-          // The cache state belongs beside the timing or the two readings look
-          // like one measurement contradicting itself. A hit skips retrieval
-          // and the model entirely.
-          '${set.cacheHit ? 'from cache' : set.generatedByModel ?? 'generated'}'
-          ' · ${timed.elapsed.inMilliseconds} ms',
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-        SizedBox(height: tokens.md),
-        for (final plan in set.plans) ...[
-          _GeneratedPlanBlock(plan: plan),
-          SizedBox(height: tokens.md),
-        ],
-      ],
-    );
-  }
-}
-
-class _GeneratedPlanBlock extends StatelessWidget {
-  const _GeneratedPlanBlock({required this.plan});
-
-  final GeneratedPlan plan;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final tokens = theme.tokens;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(plan.title, style: theme.textTheme.bodyLarge),
-        SizedBox(height: tokens.xs),
-        for (var i = 0; i < plan.stops.length; i += 1) ...[
-          if (i < plan.legs.length) _LegLine(leg: plan.legs[i]),
-          _StopLine(
-            stop: plan.stops[i],
-            plannedFor: toManila(plan.plannedForUtc),
-            partySize: plan.partySize,
-          ),
-          // The model's own sentence. Indented under its stop so it reads as
-          // commentary rather than as another retrieved fact.
-          if (plan.stops[i].note != null)
-            Padding(
-              padding: EdgeInsets.only(left: tokens.md, bottom: tokens.sm),
-              child: Text(
-                plan.stops[i].note!,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-            ),
-        ],
-        _TotalsBlock(totals: plan.totals),
-        if (plan.overBudget) ...[
-          SizedBox(height: tokens.xs),
-          // Colour and an icon, never colour alone (docs 02 §2). The server
-          // reports over budget rather than trimming stops to fit, so this is
-          // the honest answer being shown honestly.
-          Row(
-            children: [
-              Icon(
-                tokens.costOverBudgetIcon,
-                size: 18,
-                color: tokens.costOverBudget,
-              ),
-              SizedBox(width: tokens.xs),
-              Expanded(
-                child: Text(
-                  'Over your budget of '
-                  '${_pesos(plan.budgetPhpCents, zeroIsFree: false)}.',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: tokens.costOverBudget),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _LegLine extends StatelessWidget {
-  const _LegLine({required this.leg});
-
-  final PlanLeg leg;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    // An unpriced leg is stated plainly rather than hidden or guessed at. It is
-    // a gap in the fare data, and seeing it is how the gap gets closed (D5).
-    final fare = leg.fareKnown
-        ? '${leg.mode} · ${_pesos(leg.farePhpCents ?? 0)}'
-        : 'fare not recorded';
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: theme.tokens.md,
-        top: theme.tokens.xs,
-        bottom: theme.tokens.xs,
-      ),
-      child: Text(
-        '↳ ${_distance(leg.distanceM)} · $fare',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: leg.fareKnown
-              ? theme.colorScheme.onSurfaceVariant
-              : theme.colorScheme.error,
-        ),
-      ),
-    );
-  }
-}
-
-class _StopLine extends StatelessWidget {
-  const _StopLine({
-    required this.stop,
-    required this.plannedFor,
-    required this.partySize,
-  });
-
-  final PlanStop stop;
-  final DateTime plannedFor;
-  final int partySize;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final place = stop.place;
-
-    // Stored prices are per person, and the total below is for the party — so
-    // the two figures must not sit side by side unlabelled or they read as a
-    // contradiction. "each" is the cheapest way to make that unambiguous.
-    final range = place.priceMaxPhpCents == null ||
-            place.priceMaxPhpCents == place.priceMinPhpCents
-        ? _pesos(place.priceMinPhpCents)
-        : '${_pesos(place.priceMinPhpCents)}–${_pesos(place.priceMaxPhpCents!)}';
-    // A free place takes no per-head qualifier — "free each" is absurd. Note
-    // priceMax is null, not 0, for most free places, so this has to coalesce.
-    final isFree =
-        place.priceMinPhpCents == 0 && (place.priceMaxPhpCents ?? 0) == 0;
-    final price = isFree || partySize == 1 ? range : '$range each';
-
-    final hours = place.openingHours?.describe(plannedFor) ?? 'hours unknown';
-
-    return Padding(
-      padding: EdgeInsets.only(bottom: theme.tokens.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${stop.seq}. ${place.name}',
-            style: theme.textTheme.bodyLarge,
-          ),
-          Text(
-            '${place.category}'
-            '${place.barangay == null ? '' : ' · ${place.barangay}'}'
-            ' · $price · $hours',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TotalsBlock extends StatelessWidget {
-  const _TotalsBlock({required this.totals});
-
-  final PlanTotals totals;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(height: theme.tokens.sm),
-        Text(
-          totals.isComplete
-              ? 'Total ${_pesos(totals.totalPhpCents)}'
-              : 'At least ${_pesos(totals.totalPhpCents)}',
-          style: theme.textTheme.titleMedium,
-        ),
-        Text(
-          'places ${_pesos(totals.placesPhpCents, zeroIsFree: false)} · '
-          'fares ${_pesos(totals.faresPhpCents, zeroIsFree: false)}',
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-        // Saying "total" when a leg is unpriced would present a floor as a
-        // final figure. The wording above already hedges; this says why.
-        if (!totals.isComplete) ...[
-          SizedBox(height: theme.tokens.xs),
-          Text(
-            '${totals.unpricedLegs} '
-            '${totals.unpricedLegs == 1 ? 'leg has' : 'legs have'} no recorded '
-            'fare, so the real total is higher.',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.error),
           ),
         ],
       ],

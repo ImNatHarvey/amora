@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/retrieval_repository.dart';
 import '../../models/activity.dart';
 import '../../theme/app_tokens.dart';
+import '../../ui/error_retry.dart';
+import '../../util/format.dart';
 import 'ideas_providers.dart';
 
 /// "What could we do?" — the half of retrieval that needs no curated place.
@@ -73,7 +75,7 @@ class _IdeasScreenState extends ConsumerState<IdeasScreen> {
             SizedBox(height: tokens.lg),
             ideas.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => _ErrorRetry(
+              error: (error, _) => ErrorRetry(
                 message: '$error',
                 onRetry: () => ref.invalidate(ideasProvider),
               ),
@@ -86,26 +88,6 @@ class _IdeasScreenState extends ConsumerState<IdeasScreen> {
       ),
     );
   }
-}
-
-/// `₱180`, or `free` when zero is genuinely the price of something.
-///
-/// Same rule as the plan screen: "free" belongs where ₱0 is a price, not where
-/// it is a constraint being echoed back (`02-design-system.md` §2).
-String _pesos(int cents, {bool zeroIsFree = true}) {
-  if (cents == 0) return zeroIsFree ? 'free' : '₱0';
-  final pesos = cents ~/ 100;
-  final remainder = cents % 100;
-  return remainder == 0
-      ? '₱$pesos'
-      : '₱$pesos.${remainder.toString().padLeft(2, '0')}';
-}
-
-String _duration(int minutes) {
-  if (minutes < 60) return '$minutes min';
-  final hours = minutes ~/ 60;
-  final rest = minutes % 60;
-  return rest == 0 ? '${hours}h' : '${hours}h ${rest}m';
 }
 
 class _IdeasList extends ConsumerWidget {
@@ -129,11 +111,11 @@ class _IdeasList extends ConsumerWidget {
             // and a short list with no explanation reads as a broken app.
             AsyncData(:final value) when value > activities.length =>
               '${activities.length} of $value fit '
-                  '${_pesos(budgetPhpCents, zeroIsFree: false)} '
+                  '${pesos(budgetPhpCents, zeroIsFree: false)} '
                   'and what you own',
             _ => '${activities.length} '
                 '${activities.length == 1 ? 'idea' : 'ideas'} for '
-                '${_pesos(budgetPhpCents, zeroIsFree: false)}',
+                '${pesos(budgetPhpCents, zeroIsFree: false)}',
           },
           style: theme.textTheme.titleMedium,
         ),
@@ -163,17 +145,17 @@ class _IdeaTile extends StatelessWidget {
     // each" is absurd.
     final max = activity.maxBudgetPhpCents;
     final range = max == null || max == activity.minBudgetPhpCents
-        ? _pesos(activity.minBudgetPhpCents)
-        : '${_pesos(activity.minBudgetPhpCents)}–${_pesos(max)}';
+        ? pesos(activity.minBudgetPhpCents)
+        : '${pesos(activity.minBudgetPhpCents)}–${pesos(max)}';
     final isFree = activity.minBudgetPhpCents == 0 && (max ?? 0) == 0;
     final price = isFree
         ? range
-        : '$range each · ${_pesos(activity.minBudgetPhpCents * RetrievalRepository.partySize, zeroIsFree: false)} for two';
+        : '$range each · ${pesos(activity.minBudgetPhpCents * RetrievalRepository.partySize, zeroIsFree: false)} for two';
 
     final facts = [
       if (activity.category != null) activity.category!,
       if (activity.durationMinutes != null)
-        _duration(activity.durationMinutes!),
+        duration(activity.durationMinutes!),
       price,
     ].join(' · ');
 
@@ -240,7 +222,7 @@ class _EmptyState extends StatelessWidget {
               ? 'Every free idea here needs something you have not listed yet. '
                   'Add what you own and they will appear.'
               : 'Nothing costs under '
-                  '${_pesos(budgetPhpCents, zeroIsFree: false)} for two with '
+                  '${pesos(budgetPhpCents, zeroIsFree: false)} for two with '
                   'the gear you have listed. Try a higher budget, or add what '
                   'you own.',
           style: theme.textTheme.bodyMedium,
@@ -250,27 +232,3 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _ErrorRetry extends StatelessWidget {
-  const _ErrorRetry({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          message,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.error),
-        ),
-        SizedBox(height: theme.tokens.sm),
-        OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
-      ],
-    );
-  }
-}
