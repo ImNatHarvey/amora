@@ -1,6 +1,6 @@
 # Amora — Architecture & Roadmap
 
-Status: v2 (Flutter) · Last updated: 2026-07-30
+Status: v2 (Flutter) · Last updated: 2026-08-05
 
 ---
 
@@ -12,10 +12,11 @@ weekly actives.
 
 > **Note — location changed from Angeles/Pampanga to Bocaue, Bulacan.** Nothing in
 > the schema or code depends on the specific city (`places.city` is a plain column,
-> every query is generic). What this does affect, since Phase 0 hasn't run yet: no
-> seed places or `transit_fares` rows exist to redo — Phase 0's seed-data step will
-> collect real Bocaue places and fares directly, targeting Bocaue from the start. The
-> 3 km default search radius in §9 was reasoned from a dense, tricycle-heavy city
+> every query is generic), and the move cost nothing to make because it happened
+> before any real row existed. `transit_fares` has since been collected against
+> Bocaue directly — 15 real routes — and the 15 rows in `places` are placeholders
+> awaiting the desk run (§10.4a), so there is still nothing to redo. The 3 km
+> default search radius in §9 was reasoned from a dense, tricycle-heavy city
 > center; Bocaue is a smaller, more suburban municipality near NLEX, so treat 3 km as
 > a starting point to confirm once real place density is known there, not a settled
 > number.
@@ -353,7 +354,16 @@ places
   indoor bool  sunset_facing bool
   verification_tier                   -- 'curated' | 'user_submitted'
   source                              -- 'owner' | 'user'
-  submitted_by_user_id  verified_at
+  submitted_by_user_id
+  verified_at                         -- when the row was imported
+  verified_on                         -- the date a person actually established it:
+                                      -- stood there, or phoned. The staleness
+                                      -- signal §10.5 needs; verified_at cannot be
+                                      -- one, since import and collection differ by
+                                      -- weeks.
+  verified_method                     -- 'visited' | 'phoned' | 'resident'. A
+                                      -- catalogue built three ways (§10.4a) is one
+                                      -- nobody can audit unless each row says which.
   is_partner bool  partner_tier int
   social_url  contact_number  notes
 
@@ -571,28 +581,44 @@ Each ends with a stop-and-review gate and one Git commit.
 **Phase 0 — Foundation**
 Repo hygiene, `.env` + gitignore, Supabase project, schema migration for Phase 0–2
 tables only (see §5's phasing note), RLS policies, Material 3 theme with
-ThemeExtension, GoRouter shell. Seed 15 verified places and 12–15 activities from a
+ThemeExtension, GoRouter shell. Seed 8 verified places and 12–15 activities from a
 CSV import.
 
-> Originally 50 places and 40 activities. Cut to 15 deliberately: the point of the
-> seed is to prove retrieval works on real local data in Phase 2, and 15 verified
-> rows do that. Entering 50 by hand before anything is testable delays the only
-> signal that matters. The catalogue grows continuously after this — the CSVs are
-> re-importable at any time (§6).
+> Originally 50 places and 40 activities. Cut to 15, then to 8. The principle has
+> not moved: the seed exists to prove retrieval works on **real local data** in
+> Phase 2, and a number large enough to do that is the right number. Entering 50 by
+> hand before anything is testable delays the only signal that matters — and so,
+> it turned out, does waiting on 15, because 15 required an expedition nobody
+> booked. Eight free public places verifiable from a desk (§10.4a) prove exactly
+> what 15 would have proved, and they exist after one evening. The catalogue grows
+> continuously after this — the CSVs are re-importable at any time (§6).
+>
+> **Eight is a floor, not a target**, and it has a shape: at least 3 barangays, so
+> `origin_areas` offers a real choice and at least one leg crosses a fare boundary.
 
 *Accept:* app boots on the physical test device; `select count(*) from places`
-returns 15; at least 12 activities; a second user cannot read the first user's rows.
+returns at least 8, spanning at least 3 barangays; at least 12 activities; a second
+user cannot read the first user's rows.
 
 > **Open debt — the seeded places are placeholders.** The 15 rows currently in
 > `places` are `test-*` / `(TEST)` stand-ins used to prove the import pipeline and
 > the retrieval query end to end. They are not verified Bocaue data, so Phase 0's
 > real intent — D3, the curated database is the moat — is **not** met yet. Replace
-> them with 15 verified places, then re-import. Clear the stand-ins with
-> `delete from public.places where slug like 'test-%';`.
+> them with 8 verified places, then re-import. Clear the stand-ins with
+> `delete from public.places where slug like 'test-%';` — **and delete the same
+> rows from `places.csv` and `place_notes.csv` first**, or the next import puts
+> every one of them back.
 >
 > This bites in **Phase 2**, whose acceptance is "real, currently-open places
 > within 5 km". Phase 2 can be *built* against placeholders; it cannot be
 > *accepted* against them.
+>
+> **The debt is now payable at a desk.** It stood open for weeks on the assumption
+> that clearing it meant a day on foot. §10.4a says otherwise: the free public
+> layer — plazas, parks, riverside, church grounds, covered courts, the market — is
+> verifiable from resident knowledge plus OpenStreetMap coordinates, and priced
+> places are verifiable by phone. `supabase/seed/DESK-CHECKLIST.md` is the
+> procedure.
 
 **Phase 1 — Identity & inventory — ✅ COMPLETE**
 Supabase auth (email). Profile setup. "What do you already have?" resource picker.
@@ -648,11 +674,19 @@ isn't useful, the AI won't save it.**
 > once have passed is now excluded. That tightening was a side effect, not a
 > decision, so it is recorded rather than left to surprise someone.
 >
-> **Run the acceptance check at ₱200 and again at ₱600.** If ₱200 returns almost
-> nothing but ₱600 works, retrieval is fine and the finding is about Bocaue's real
-> price floor — which is worth knowing and is not a Phase 2 failure. If ₱600 also
-> returns nothing, the problem is retrieval or the data. Separating those two is
-> the entire point of running both.
+> **Run the acceptance check at ₱0 and again at ₱100–₱200.** The pair was
+> originally ₱200 and ₱600, chosen to separate "retrieval is broken" from "Bocaue's
+> price floor is higher than we thought". Against the free-public-layer catalogue
+> that ships first (§10.4a), ₱600 admits everything and the two runs stop being a
+> diagnosis. The replacement pair tests the two things that can actually differ:
+> ₱0 proves the free layer and the "₱0 is a real budget" path, and ₱100–₱200 is the
+> run where a fare gets priced into a total.
+>
+> **A ₱0 plan is always walk-only, and that is correct.** `build_simple_plan`
+> includes the leg fare in its budget check, so at a budget of zero no paid ride
+> can ever be admitted — the candidate is skipped rather than the fare hidden.
+> Written down because a walk-only ₱0 plan looks exactly like a broken fare path
+> and is not one. `fare_for` is exercised by the second run, not the first.
 
 > **"Under 400 ms" means server execution time.** Measured at 11.9 ms on the seed
 > data. End-to-end from the device also carries a Manila↔Tokyo round trip, which
@@ -899,7 +933,7 @@ there. The honest cost: a list is less fun, and less likely to spread.
 
 ## 10. Seed-data doctrine
 
-Why 15 hand-verified rows beat 500 scraped ones, what breaks when a row is stale,
+Why a handful of hand-verified rows beat 500 scraped ones, what breaks when a row is stale,
 and what may and may not produce one. Written down because the instinct to acquire
 data faster recurs, and the counter-argument is arithmetic rather than taste.
 
@@ -965,8 +999,12 @@ optimises the cheap one.
 
 ### 10.4 What may produce a row
 
-**Only a person who has been there.** `verification_tier = 'curated'` means
-someone stood at the door. Nothing else may set it.
+**Only a person, never a model.** `verification_tier = 'curated'` means a human
+established the fact and can say how they know it. Standing at the door is the
+strongest form and stays the default. Two others are legitimate and are bounded
+below in 10.4a — a phone call, and a resident's own knowledge of a fact that does
+not move. Nothing else may set it, and no combination of sources substitutes for
+one of the three.
 
 #### Web search is a research aid, never a source
 
@@ -997,6 +1035,65 @@ reaching `places.csv` unverified would violate **D3 and CLAUDE.md's hard rule
 against invented local data** — "plausible-looking invented rows" is exactly the
 artefact it produces. The research-aid form violates neither.
 
+#### 10.4a What a desk can verify
+
+Written because the opposite was assumed for weeks: that a row costs a journey, so
+a catalogue costs an expedition, so the catalogue waits for a free Saturday that
+never arrives. It does not. **The sentence above already names three detectors —
+going there, phoning them, or a user reporting it.** Only the first was ever
+written up. This section writes up the other two, and adds the one class of fact a
+resident already holds.
+
+The governing rule is the identity/volatility split the search argument just made,
+applied to different sources. **Identity may come from memory, a map, or a search.
+Volatility may come only from standing there, a phone call, or a user report.**
+
+**A phone call verifies volatility.** A call that establishes the place is open on
+Saturday evening and that a milk tea is ₱120 has established exactly what a visit
+establishes about those two facts, from the party who sets them. It produces a
+`curated` row with `verified_on` set to the date of the call. This is not a lesser
+tier; it is the second of the three detectors, and it was always allowed.
+
+Its limits are real and are why it does not replace visiting: nobody answers a
+public plaza, a phone number can be stale in the same way an opening time can, and
+a call cannot tell you the second floor has no lift, that it is empty before 4pm, or
+that the aircon only reaches the back room. **`place_notes` is mostly unreachable by
+phone**, and `place_notes` is the layer D2 claims replaces the Reddit tab.
+
+**Resident knowledge is a visit, for facts that do not move.** A person who has
+stood in the plaza has stood in the plaza. That it exists, sits in Poblacion, is
+free, is open air, and is dead before 4pm are facts they hold first-hand; requiring
+them to walk back and re-observe what has not changed is ceremony, not verification.
+`verified_on` carries the honest date of the last time they were actually there —
+which is the whole reason that column exists, and why it is a date rather than a
+boolean.
+
+**Resident knowledge is not a source for a price or for this week's hours.** "That
+café is about ₱150" is a guess with a local accent. It fails for precisely the
+reasons search fails: it is a memory of a claim that was true once, with no
+mechanism to detect a change younger than the memory. The test is not *how sure do
+you feel* — it is *could this have changed since you last looked, without anyone
+telling you.* If yes, it is volatile, and it needs a call or a visit.
+
+Rows that qualify under resident knowledge are almost exactly the free public
+layer — plazas, parks, riverside, church grounds, covered courts, the public market.
+That is not a coincidence. They are the class where price is 0 and hours are
+near-invariant, which is to say the class with almost no volatile facts in it, which
+is why they can be recorded from a desk at all.
+
+**OpenStreetMap supplies coordinates, and nothing else.** A coordinate is pure
+identity and the one field in the schema that does not decay. OSM hours and OSM
+prices are the same stale copies the search argument already rejects, and are
+refused for the same reason. Coordinates for the free public layer may be read off
+the map; for anything with a door and a menu, take them at the door.
+
+**Provenance is recorded, not inferred.** `places.verified_method` carries
+`visited`, `phoned` or `resident`, because a catalogue built three ways is one
+§10.4 cannot audit unless each row says which way it was built. It is also what
+lets a future staleness policy treat them differently — a phoned price and a seen
+price are not equally strong, and nothing else in the schema records the
+difference.
+
 #### The candidate workflow
 
 Candidates live in `supabase/seed/candidates/candidates.csv`, tracked in git so
@@ -1009,9 +1106,14 @@ That incompatibility is the enforcement, not a convention to remember.
 pasting candidate rows into `places.csv` fails the import loudly — and the columns
 retrieval actually requires are precisely the ones a search cannot supply.
 
-A candidate becomes a row only once someone has visited and typed the row by hand,
-with `verified_on` set to the date of the visit. See
+A candidate becomes a row only once a person has established its volatile facts —
+by visiting, or by phoning (10.4a) — and typed the row by hand, with `verified_on`
+set to the date of the visit or the call and `verified_method` recording which. See
 `supabase/seed/candidates/README.md`.
+
+A candidate's phone number is exactly the kind of **identity** search is good for,
+which makes the candidate file the natural front end to a phone-verified row rather
+than a detour around one.
 
 ### 10.5 The seed is a hypothesis, corrected by use
 
@@ -1054,9 +1156,15 @@ make the catalogue's weakest rows indistinguishable from its strongest.
 completed plans, and a wrong seed prevents completion: the user abandons, no
 report is written, nothing is corrected. The feedback is positive on quality, not
 negative — bad rows are not fixed by use, they are abandoned and stay bad.
-With 15 rows and single-digit users there will be roughly zero reports for months,
-so **the seed is the entire product for the whole MVP window.** Fifteen
-hand-verified rows remains the target.
+With single-digit rows and single-digit users there will be roughly zero reports for
+months, so **the seed is the entire product for the whole MVP window.**
+
+**Lowering the count from 15 to 8 (§8) does not lower this bar, and must not be read
+as doing so.** What changed is the *cost* of a verified row — §10.4a establishes that
+the free public layer is verifiable from a desk — not the standard a row must meet.
+Eight rows each established by a person, none of them guessed, is the same catalogue
+as fifteen would have been, minus seven rows. A ninth row invented to reach a round
+number would be worth less than nothing, for every reason in §10.1.
 
 ---
 

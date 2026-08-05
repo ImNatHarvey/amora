@@ -76,8 +76,10 @@ stop and tell me — there is always a free path, or the feature waits.
 search over Reddit, Facebook or YouTube — is a research aid for finding places
 worth walking to. Its output goes in `supabase/seed/candidates/`, never in
 `places.csv`. Agreement across sources measures copying, not truth, and it cannot
-detect a change younger than the corpus. A `curated` row means a person stood at
-the door. Full reasoning: `docs/00-architecture.md` §10.4.
+detect a change younger than the corpus. A `curated` row means a person established
+the fact and can say how: **a candidate is promoted by a visit or by a phone call**,
+never by a search, and a resident's own knowledge counts only for facts that do not
+move. Full reasoning: `docs/00-architecture.md` §10.4 and §10.4a.
 
 Note: shadcn/ui, MagicUI, and Impeccable are web-only. They are reserved for the
 phase-9 Next.js site and must never be referenced in Flutter work.

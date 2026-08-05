@@ -47,7 +47,13 @@ at the door, a verified barangay, hours someone read off the sign.
 | `status` | `unvisited` · `visited-confirmed` · `visited-rejected` · `closed` |
 | `notes` | Anything useful for the visit. "2nd floor", "ask about the back room". |
 
-## Promotion — the only path into the catalogue
+## Promotion — the two paths into the catalogue
+
+A candidate is promoted by **a visit or a phone call**, never by more sources
+agreeing. Both establish the volatile facts from the party that sets them; the
+difference is what else you learn while you are there.
+
+**By visit**
 
 1. Walk there.
 2. Confirm it exists, is open, and read the prices off the menu.
@@ -55,7 +61,25 @@ at the door, a verified barangay, hours someone read off the sign.
 4. **Type the row into `places.csv` by hand**, using
    `supabase/seed/FIELD-CHECKLIST.md` for field order and the mandatory columns.
    Coordinates come from your phone at the door — never from the source.
-5. Set `verified_on` to the date you were actually there.
+5. Set `verified_on` to the date you were actually there, and `verified_method`
+   to `visited`.
+
+**By phone** — see `supabase/seed/DESK-CHECKLIST.md` for the call itself.
+
+1. Find the number. A phone number is **identity**, which is what search is
+   actually good for — so `source_url` earning you a number is this file working
+   as intended.
+2. Call. Establish the hours and the current price of the cheapest realistic
+   order, from the person who sets them.
+3. Set `status` to `visited-confirmed` — the name is now slightly wrong, and it
+   stays rather than churn the column; `verified_method` carries the distinction.
+4. Type the row by hand as above. **Coordinates still may not come from the
+   source** — use OpenStreetMap, which is identity data, or leave the row for a
+   day you are passing.
+5. Set `verified_on` to the date of the call, and `verified_method` to `phoned`.
+
+A phoned row is a real row, and it is thinner than a seen one: nobody describes
+their own second floor as having no lift. `place_notes` mostly waits for a visit.
 
 A `visited-rejected` or `closed` candidate stays in this file. Knowing a lead was
 checked and failed is worth as much as knowing one succeeded — it stops the same
