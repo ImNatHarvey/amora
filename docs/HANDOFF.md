@@ -393,7 +393,9 @@ Phase 6.
 and GPS arrives with the map in Phase 4. `profiles.home_lat`/`home_lng` are
 likewise still never written by anything.
 
-**Dark-mode `primary` and `error` converge** (`#FFB1C6` vs `#FFB4AB`). Phase 2's
-screen is unstyled so it does not bite yet, but Phase 4 renders money in colour
-and an over-budget total has to be unmistakable. Fix it during Phase 3 at the
-latest — it gets harder once screens depend on both.
+~~Dark-mode `primary` and `error` converge.~~ **Fixed 2026-08-05**, ahead of Phase 4
+rendering money in colour. The dark error family is overridden to an orange-red hue
+so the two roles differ by hue rather than by nothing, and over-budget now carries
+`tokens.costOverBudgetIcon` as well — colour alone fails for red-green colourblind
+users at any hue. Light mode untouched. `docs/02-design-system.md` §2 and
+`test/theme_test.dart`.

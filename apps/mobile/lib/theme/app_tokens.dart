@@ -34,6 +34,7 @@ class AmoraTokens extends ThemeExtension<AmoraTokens> {
     required this.costFree,
     required this.costNormal,
     required this.costOverBudget,
+    this.costOverBudgetIcon = Icons.error_outline,
   });
 
   /// Builds the tokens for [colorScheme].
@@ -109,6 +110,21 @@ class AmoraTokens extends ThemeExtension<AmoraTokens> {
   /// A cost that exceeds the user's stated budget.
   final Color costOverBudget;
 
+  /// The icon that must accompany [costOverBudget] wherever it is used.
+  ///
+  /// A token rather than a convention, because "over budget" is the one piece
+  /// of money meaning in this app that a user cannot afford to miss, and colour
+  /// alone cannot carry it: red-green colourblindness affects roughly one man
+  /// in twelve, and no choice of hue fixes that. The dark scheme's error colour
+  /// was separated from `primary` in the same change (`app_theme.dart`), but
+  /// separation is what makes the colour *legible*, not what makes it
+  /// *sufficient*.
+  ///
+  /// Required by `docs/02-design-system.md` §2. Nothing renders an over-budget
+  /// total yet — Phase 4 does — so this exists to be there before the first
+  /// screen needs it rather than to be retrofitted across several afterwards.
+  final IconData costOverBudgetIcon;
+
   @override
   AmoraTokens copyWith({
     double? xs,
@@ -123,6 +139,7 @@ class AmoraTokens extends ThemeExtension<AmoraTokens> {
     Color? costFree,
     Color? costNormal,
     Color? costOverBudget,
+    IconData? costOverBudgetIcon,
   }) {
     return AmoraTokens(
       xs: xs ?? this.xs,
@@ -137,6 +154,7 @@ class AmoraTokens extends ThemeExtension<AmoraTokens> {
       costFree: costFree ?? this.costFree,
       costNormal: costNormal ?? this.costNormal,
       costOverBudget: costOverBudget ?? this.costOverBudget,
+      costOverBudgetIcon: costOverBudgetIcon ?? this.costOverBudgetIcon,
     );
   }
 
@@ -158,6 +176,9 @@ class AmoraTokens extends ThemeExtension<AmoraTokens> {
       costFree: Color.lerp(costFree, other.costFree, t)!,
       costNormal: Color.lerp(costNormal, other.costNormal, t)!,
       costOverBudget: Color.lerp(costOverBudget, other.costOverBudget, t)!,
+      // An icon has no midpoint. Snapping at the halfway mark is what Flutter's
+      // own non-interpolatable theme values do.
+      costOverBudgetIcon: t < 0.5 ? costOverBudgetIcon : other.costOverBudgetIcon,
     );
   }
 }

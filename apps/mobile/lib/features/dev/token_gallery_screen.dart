@@ -61,7 +61,38 @@ class TokenGalleryScreen extends StatelessWidget {
               children: [
                 _CostRow('Free / ₱0', 'Free', tokens.costFree),
                 _CostRow('Normal cost', '₱180', tokens.costNormal),
-                _CostRow('Over budget', '₱1,250', tokens.costOverBudget),
+                _CostRow(
+                  'Over budget',
+                  '₱1,250',
+                  tokens.costOverBudget,
+                  icon: tokens.costOverBudgetIcon,
+                ),
+                SizedBox(height: tokens.sm),
+                // The check this row exists for: in dark mode `primary` and
+                // `error` used to be neighbours, so an over-budget total read
+                // as a decorative accent. Put them side by side and the
+                // separation is either obvious or it is not.
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'primary vs error',
+                        style: theme.textTheme.bodyLarge,
+                      ),
+                    ),
+                    Text(
+                      '₱1,250',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(color: colors.primary),
+                    ),
+                    SizedBox(width: tokens.sm),
+                    Text(
+                      '₱1,250',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(color: colors.error),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -170,11 +201,14 @@ class _Swatch extends StatelessWidget {
 }
 
 class _CostRow extends StatelessWidget {
-  const _CostRow(this.label, this.amount, this.color);
+  const _CostRow(this.label, this.amount, this.color, {this.icon});
 
   final String label;
   final String amount;
   final Color color;
+
+  /// Present only for over budget, which must never rely on colour alone.
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -186,6 +220,10 @@ class _CostRow extends StatelessWidget {
       child: Row(
         children: [
           Expanded(child: Text(label, style: theme.textTheme.bodyLarge)),
+          if (icon != null) ...[
+            Icon(icon, size: 18, color: color),
+            SizedBox(width: tokens.xs),
+          ],
           Text(
             amount,
             style: theme.textTheme.titleMedium?.copyWith(color: color),

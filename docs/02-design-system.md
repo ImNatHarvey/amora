@@ -48,16 +48,29 @@ screen actually comes from.
 > to read this after Phase 7 will correctly conclude the palette is now wrong and
 > propose a redesign nobody needs.
 
-> **Known issue — primary and error converge in dark mode.** In light mode the two
-> are far apart (`primary #8C4A5F` against `error #BA1A1A`). Material 3 lightens
-> both for the dark scheme and they end up neighbours: `primary #FFB1C6` against
-> `error #FFB4AB`, differing by ~27/255 on one channel alone. Verified on device.
-> Nothing renders money yet, so nothing is broken today, but "over budget" must not
-> read as a decorative accent. **Resolve before Phase 4 builds the cost breakdown**
-> — either override `error` in the dark scheme toward orange-red, or carry the
-> over-budget state with an icon or label rather than colour alone. Colour should
-> not be the only channel for that meaning regardless, since it also fails for
-> red-green colourblind users.
+> **Resolved — primary and error used to converge in dark mode.** Material 3
+> lightens both roles for the dark scheme and they ended up neighbours:
+> `primary #FFB1C6` against `error #FFB4AB`, ~27/255 apart on one channel.
+> Verified on device, and "over budget" read as a decorative accent.
+>
+> **Both remedies were taken, because they fix different halves of the problem.**
+> The dark scheme's error family is overridden to the Material tonal steps
+> (80/20/30/90) of an orange-red hue, and the over-budget state carries an icon as
+> well as a colour.
+>
+> The separation is a *hue* one, not a lightness one, and that is the point: at the
+> same tone the two roles are equally light by construction, so error now runs
+> green-over-blue (`#FFB68F`) where primary runs blue-over-green (`#FFB1C6`). The
+> old red sat almost neutral between them, which is exactly why it disappeared.
+>
+> **Light mode is untouched** — `primary #8C4A5F` against `error #BA1A1A` was never
+> the problem, and a user only sees one mode.
+>
+> Hue separation makes the colour legible; it does not make colour *sufficient*.
+> Red-green colourblindness affects roughly one man in twelve and no hue choice
+> fixes it, which is why the icon below is mandatory rather than advisory.
+> Regression-tested in `test/theme_test.dart`, which asserts the relationship
+> rather than the hex, so retuning the palette stays allowed.
 
 **Generation:** the full Material 3 tonal range is derived at runtime by
 `ColorScheme.fromSeed` in `lib/theme/app_theme.dart` — the same algorithm the
@@ -82,8 +95,14 @@ Money needs consistent meaning across the app:
 |---|---|
 | Free / ₱0 | `tertiary` — treated as good news, never muted |
 | Normal cost | `onSurface` |
-| Over budget | `error` |
+| Over budget | `error` **and** `tokens.costOverBudgetIcon` — never colour alone |
 | Partner / sponsored place | no colour treatment; a small text label only |
+
+**Over budget must never be carried by colour alone.** It is the one money meaning
+in this app a user cannot afford to miss, and one man in twelve cannot reliably see
+it. The icon is part of the token set (`AmoraTokens.costOverBudgetIcon`) rather than
+something each screen remembers, for the same reason the candidate CSV's columns are
+incompatible by design: a mechanism beats a habit.
 
 **"Free" is for prices, not for addends.** ₱0 reads as "free" wherever it is the
 price of something — a place, a leg, a plan total. It reads as `₱0` wherever it is
