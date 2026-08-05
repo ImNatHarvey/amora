@@ -112,6 +112,34 @@ Gotchas found building it, worth not rediscovering:
   return, because keep-alive sockets are still open. Set `process.exitCode` and
   return instead. Cost twenty minutes in the acceptance harness.
 
+## Phase 4 — built, one criterion deferred
+
+Map, timeline, cost breakdown, save/reopen and place detail, with **no new
+dependencies** — `flutter_map` 8.3.1, `latlong2` and `url_launcher` were already
+in `pubspec.yaml`.
+
+**Routes moved.** `/plan` used to be the request screen; it is now `/plan-request`,
+because `/plan/:id` is a saved plan. Also `/plans` and `/place/:id`.
+
+**`place_notes` finally has a renderer.** The table has existed since Phase 0 and
+nothing displayed it, which quietly undercut D2's claim to replace the Reddit tab
+for four phases.
+
+**The embedded DIY player is deferred.** No activity has a `tutorial_url` — five
+are `is_diy`, none has a link — and it is the only slice needing a webview.
+Adding one that can play nothing repeats the `flutter_image_compress` mistake.
+
+**Gotchas worth not rediscovering:**
+
+- **`const StrokePattern.dashed(segments: [8, 6])` does not compile.** The
+  package asserts `segments.length`, which const evaluation cannot do. Drop the
+  `const` on the constructor and keep it on the list.
+- **Models keep `sourcePayload`** so saving does not re-request. For a generated
+  plan that would spend a second Gemini call *and* could return a different plan
+  — the user would save something other than what they were looking at.
+- **`plans.origin_area` exists because a reopened plan needs it.** The first leg
+  starts at the origin, not at a stop.
+
 ## Review pass — what it found
 
 Run after Phase 3 landed, because three phases had gone in fast. Supabase security

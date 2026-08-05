@@ -15,6 +15,26 @@ import '../../util/format.dart';
 /// Deliberately plain: no cards, no colour, no motion. Phase 4 designs the real
 /// plan experience; styling here would flatter whichever output happened to get
 /// it first.
+/// How one leg reads: `450 m · jeepney · ₱30`, or the gap stated plainly.
+///
+/// Built from [PlanLeg.segments] rather than from `mode`, which today is a list
+/// of one. §12.3: a day trip out of Bocaue is a bus, then an MRT ride, then a
+/// jeep, and that arrives as an additive `plan_leg_segments` table. Reading the
+/// list now costs a `join` and saves rewriting every screen that draws a leg.
+String legSummary(PlanLeg leg) {
+  final parts = [
+    for (final segment in leg.segments)
+      // An unpriced segment is stated plainly rather than hidden or guessed at.
+      // It is a gap in the fare data, and seeing it is how the gap gets closed
+      // (D5) — an estimate here would look complete and be wrong.
+      segment.fareKnown
+          ? '${segment.mode} · ${pesos(segment.farePhpCents ?? 0)}'
+          : 'fare not recorded',
+  ];
+
+  return '${distance(leg.distanceM)} · ${parts.join(' → ')}';
+}
+
 class LegLine extends StatelessWidget {
   const LegLine({required this.leg, super.key});
 
@@ -24,12 +44,6 @@ class LegLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // An unpriced leg is stated plainly rather than hidden or guessed at. It is
-    // a gap in the fare data, and seeing it is how the gap gets closed (D5).
-    final fare = leg.fareKnown
-        ? '${leg.mode} · ${pesos(leg.farePhpCents ?? 0)}'
-        : 'fare not recorded';
-
     return Padding(
       padding: EdgeInsets.only(
         left: theme.tokens.md,
@@ -37,15 +51,53 @@ class LegLine extends StatelessWidget {
         bottom: theme.tokens.xs,
       ),
       child: Text(
-        '↳ ${distance(leg.distanceM)} · $fare',
+        '↳ ${legSummary(leg)}',
         style: theme.textTheme.bodySmall?.copyWith(
-          color: leg.fareKnown
+          // Any unpriced segment colours the whole line: the total below is a
+          // floor, and the row that caused it should be the one that says so.
+          color: leg.segments.every((s) => s.fareKnown)
               ? theme.colorScheme.onSurfaceVariant
               : theme.colorScheme.error,
         ),
       ),
     );
   }
+}
+
+/// The price of a stop, per person, worded so it cannot be misread.
+///
+/// Stored prices are per person and a plan total is for the party, so the two
+/// figures must never sit side by side unlabelled — they read as a
+/// contradiction. "each" is the cheapest way to make that unambiguous.
+///
+/// A free place takes no per-head qualifier, because "free each" is absurd.
+/// `priceMax` is null rather than 0 for most free places, so this has to
+/// coalesce rather than compare.
+String stopPrice(PlanStop stop, int partySize) {
+  final place = stop.place;
+  final range = place.priceMaxPhpCents == null ||
+          place.priceMaxPhpCents == place.priceMinPhpCents
+      ? pesos(place.priceMinPhpCents)
+      : '${pesos(place.priceMinPhpCents)}–${pesos(place.priceMaxPhpCents!)}';
+
+  final isFree =
+      place.priceMinPhpCents == 0 && (place.priceMaxPhpCents ?? 0) == 0;
+  return isFree || partySize == 1 ? range : '$range each';
+}
+
+/// `cafe · Poblacion · ₱60–₱120 each · 10:00–21:00`.
+///
+/// One function because two screens draw this line — the flat row below and the
+/// timeline's numbered tile — and the money wording in it is a rule, not
+/// formatting. Two copies is how `_pesos` ended up byte-identical in two files
+/// and one of them fixable without the other.
+String stopFacts(PlanStop stop, DateTime plannedFor, int partySize) {
+  final place = stop.place;
+  final hours = place.openingHours?.describe(plannedFor) ?? 'hours unknown';
+
+  return '${place.category}'
+      '${place.barangay == null ? '' : ' · ${place.barangay}'}'
+      ' · ${stopPrice(stop, partySize)} · $hours';
 }
 
 class StopLine extends StatelessWidget {
@@ -63,22 +115,6 @@ class StopLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final place = stop.place;
-
-    // Stored prices are per person, and the total below is for the party — so
-    // the two figures must not sit side by side unlabelled or they read as a
-    // contradiction. "each" is the cheapest way to make that unambiguous.
-    final range = place.priceMaxPhpCents == null ||
-            place.priceMaxPhpCents == place.priceMinPhpCents
-        ? pesos(place.priceMinPhpCents)
-        : '${pesos(place.priceMinPhpCents)}–${pesos(place.priceMaxPhpCents!)}';
-    // A free place takes no per-head qualifier — "free each" is absurd. Note
-    // priceMax is null, not 0, for most free places, so this has to coalesce.
-    final isFree =
-        place.priceMinPhpCents == 0 && (place.priceMaxPhpCents ?? 0) == 0;
-    final price = isFree || partySize == 1 ? range : '$range each';
-
-    final hours = place.openingHours?.describe(plannedFor) ?? 'hours unknown';
 
     return Padding(
       padding: EdgeInsets.only(bottom: theme.tokens.sm),
@@ -86,13 +122,11 @@ class StopLine extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${stop.seq}. ${place.name}',
+            '${stop.seq}. ${stop.place.name}',
             style: theme.textTheme.bodyLarge,
           ),
           Text(
-            '${place.category}'
-            '${place.barangay == null ? '' : ' · ${place.barangay}'}'
-            ' · $price · $hours',
+            stopFacts(stop, plannedFor, partySize),
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),

@@ -8,6 +8,9 @@ import '../features/auth/sign_up_screen.dart';
 import '../features/dev/token_gallery_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/ideas/ideas_screen.dart';
+import '../features/place/place_detail_screen.dart';
+import '../features/plan/plan_detail_screen.dart';
+import '../features/plan/saved_plans_screen.dart';
 import '../features/onboarding/profile_setup_screen.dart';
 import '../features/onboarding/resource_picker_screen.dart';
 import '../features/plan_request/plan_request_screen.dart';
@@ -20,8 +23,18 @@ abstract final class Routes {
   static const signUp = '/sign-up';
   static const onboardingProfile = '/onboarding/profile';
   static const onboardingResources = '/onboarding/resources';
-  static const plan = '/plan';
+  /// The structured intake — budget, origin, time. Renamed from `/plan` when
+  /// Phase 4 needed that prefix for saved plans; it is the request, not a plan.
+  static const planRequest = '/plan-request';
   static const ideas = '/ideas';
+
+  /// The list of saved plans, and one saved plan at `/plan/:id`.
+  static const plans = '/plans';
+  static const plan = '/plan';
+
+  /// Place detail at `/place/:id`.
+  static const place = '/place';
+
   static const devTokens = '/dev/tokens';
 }
 
@@ -132,8 +145,25 @@ final routerProvider = Provider<GoRouter>((ref) {
       // resource picker has to have run before retrieval can filter on what
       // the user owns.
       GoRoute(
-        path: Routes.plan,
+        path: Routes.planRequest,
         builder: (context, state) => const PlanRequestScreen(),
+      ),
+      GoRoute(
+        path: Routes.plans,
+        builder: (context, state) => const SavedPlansScreen(),
+      ),
+      // Saved plan and place detail. Both take an id and both are behind the
+      // same ladder; RLS is what actually decides whether the row comes back,
+      // so a guessed id is an empty screen rather than a leak.
+      GoRoute(
+        path: '${Routes.plan}/:id',
+        builder: (context, state) =>
+            PlanDetailScreen(planId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '${Routes.place}/:id',
+        builder: (context, state) =>
+            PlaceDetailScreen(placeId: state.pathParameters['id']!),
       ),
       // Same gate as /plan: the resource picker has to have run before either
       // screen can filter on what the user owns.

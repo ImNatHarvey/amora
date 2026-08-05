@@ -266,6 +266,15 @@ lib/
     ideas/                           -- "what could we do", no places needed
       ideas_providers.dart
       ideas_screen.dart
+    plan/                            -- Phase 4, a SAVED plan
+      plan_providers.dart
+      plan_map.dart                  -- flutter_map, numbered stops, dashed walks
+      plan_timeline.dart             -- the document you walk around with
+      plan_detail_screen.dart
+      saved_plans_screen.dart
+      save_plan_button.dart          -- one save path for both composers
+    place/                           -- Phase 4
+      place_detail_screen.dart       -- place_notes finally has a renderer
     plan_request/                    -- Phase 2+, the structured intake
       plan_request_providers.dart
       plan_request_screen.dart       -- the form, and the Phase 2 result
@@ -845,13 +854,41 @@ adversarial ones ("take me to Starbucks in Manila").
 > degrades to "ask with chips" rather than to a dead product, and the Phase 2
 > screen survives as the dev and test surface underneath.
 
-**Phase 4 — Plan experience**
+**Phase 4 — Plan experience — ⚠️ BUILT, ONE CRITERION DEFERRED**
 `flutter_map` with numbered stops, dashed walk legs, solid ride legs, per-leg fares,
 vertical timeline, cost breakdown, save. Tapping a stop opens place detail:
 `place_notes`, contact, social link, price range and hours. DIY activities show
 their `tutorial_url` as an embedded player.
 *Accept:* generate, save, reopen, and read a plan while walking around; a stop's
 notes are readable from the plan; a DIY activity plays its tutorial in-app.
+
+> **The embedded tutorial player is deferred, deliberately.** Zero of the 16
+> activities has a `tutorial_url` — five are `is_diy` and none has a link — so
+> there is nothing to play, and it is the only slice needing
+> `youtube_player_iframe`, a webview. Adding a webview that can play nothing is
+> the `flutter_image_compress` mistake repeated. It ships when a URL exists;
+> collecting one is a field-checklist task, including the embed check.
+>
+> **Everything else is built with no new dependencies** — `flutter_map`,
+> `latlong2` and `url_launcher` were already installed.
+>
+> **`save_plan` recomputes rather than stores.** It takes place ids, their order
+> and the model's notes from the payload and derives every distance, fare and
+> peso itself. Its own invariant-3 test caught it half-doing this: a fabricated
+> ₱9,999.99 stop price was correctly ignored while a fabricated ₱8,888.88 fare
+> went straight in. The fix was to ignore the payload's `legs` array entirely —
+> fewer inputs to trust beats more inputs to validate.
+>
+> **`read_plan` returns the composers' shape**, so one renderer draws a fresh
+> plan and a saved one and they cannot disagree about a fare.
+>
+> **Contact and social render only when present**, and no place has either
+> today. That is an absent row, not a blank label.
+>
+> **Acceptance is partly blocked on the same data as Phases 0 and 2.** Save,
+> reopen and read are testable now. Whether the *map* is useful is not: fifteen
+> invented coordinates a few hundred metres apart draw a cluster of pins and a
+> set of near-zero legs. The round-trip test produced legs of 72 m and 688 m.
 
 > **`place_notes` had no renderer until now.** The table has existed since Phase 0
 > and the field checklist collects it, but no phase displayed it — which quietly

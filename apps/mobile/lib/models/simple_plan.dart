@@ -126,6 +126,16 @@ class PlanLeg {
   /// tricycle between two barangays costs, and inventing one would poison the
   /// only data that makes Amora worth using (docs D5).
   final bool fareKnown;
+
+  /// This leg as a list of segments, which today always has length one.
+  ///
+  /// **Widgets must render from this, never from [mode] directly.** A day trip
+  /// out of Bocaue is a bus, then an MRT ride, then a jeep — three fares in one
+  /// leg — and that arrives as an additive `plan_leg_segments` table
+  /// (`docs/00-architecture.md` §12.3). Taking the list now costs nothing;
+  /// assuming a single mode is the one decision here that would be expensive to
+  /// undo, because it would be baked into every screen that draws a leg.
+  List<PlanLeg> get segments => [this];
 }
 
 /// What a plan costs, and how much of that we can actually vouch for.
@@ -181,6 +191,9 @@ class SimplePlan {
     required this.candidateActivities,
     this.partySize = Party.size,
     this.radiusM,
+    this.originLat,
+    this.originLng,
+    this.sourcePayload,
   });
 
   factory SimplePlan.fromMap(Map<String, dynamic> map) {
@@ -189,6 +202,8 @@ class SimplePlan {
       plannedForUtc: DateTime.parse(map['planned_for'] as String).toUtc(),
       budgetPhpCents: map['budget_php_cents'] as int,
       originArea: origin['area'] as String,
+      originLat: (origin['lat'] as num?)?.toDouble(),
+      originLng: (origin['lng'] as num?)?.toDouble(),
       // The server always sends it. The fallback is a floor, not a guess: it
       // matches what the RPC itself defaults to, so a missing value can never
       // silently cost the outing for one person.
@@ -207,6 +222,7 @@ class SimplePlan {
         for (final activity in map['candidate_activities'] as List)
           Activity.fromMap(activity as Map<String, dynamic>),
       ],
+      sourcePayload: map,
     );
   }
 
@@ -215,6 +231,18 @@ class SimplePlan {
   /// What the whole party can spend, not what each person can.
   final int budgetPhpCents;
   final String originArea;
+
+  /// Where the plan starts, for the map's first leg.
+  ///
+  /// Null only for a payload that predates these being kept — the server has
+  /// always sent them under `origin`, and `fromMap` used to throw them away.
+  /// The first leg runs from here rather than from a stop, so without them the
+  /// map can draw every leg but the one the user actually begins with.
+  ///
+  /// The coordinate is `origin_areas`' centroid of the curated places in that
+  /// barangay, so it comes from real rows rather than anyone's memory.
+  final double? originLat;
+  final double? originLng;
 
   /// How many people. Two while D1 scopes the MVP to couples.
   final int partySize;
@@ -236,6 +264,18 @@ class SimplePlan {
   /// call Gemini makes in Phase 3. They are surfaced so the resource filter is
   /// visibly working before any of that exists.
   final List<Activity> candidateActivities;
+
+  /// The payload this was parsed from, kept so the plan can be saved without
+  /// asking for it again.
+  ///
+  /// Not laziness: re-requesting a *generated* plan in order to save it would
+  /// spend a second Gemini call and could return a different plan, so the user
+  /// would save something other than what they were looking at. `save_plan`
+  /// recomputes every peso from this anyway (invariant 3), so what is kept here
+  /// is a shape, not a set of figures to be trusted.
+  ///
+  /// Null for a plan built in a test rather than parsed from the server.
+  final Map<String, dynamic>? sourcePayload;
 
   bool get isEmpty => stops.isEmpty;
 }

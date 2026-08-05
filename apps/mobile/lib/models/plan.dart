@@ -25,6 +25,9 @@ class GeneratedPlan {
     required this.overBudget,
     this.partySize = Party.size,
     this.radiusM,
+    this.originLat,
+    this.originLng,
+    this.sourcePayload,
   });
 
   factory GeneratedPlan.fromMap(Map<String, dynamic> map) {
@@ -36,6 +39,8 @@ class GeneratedPlan {
       plannedForUtc: DateTime.parse(map['planned_for'] as String).toUtc(),
       budgetPhpCents: map['budget_php_cents'] as int,
       originArea: origin['area'] as String,
+      originLat: (origin['lat'] as num?)?.toDouble(),
+      originLng: (origin['lng'] as num?)?.toDouble(),
       partySize: map['party_size'] as int? ?? Party.size,
       radiusM: map['radius_m'] as int?,
       stops: [
@@ -48,6 +53,7 @@ class GeneratedPlan {
       ],
       totals: PlanTotals.fromMap(map['totals'] as Map<String, dynamic>),
       overBudget: map['over_budget'] as bool? ?? false,
+      sourcePayload: map,
     );
   }
 
@@ -58,6 +64,11 @@ class GeneratedPlan {
   /// What the whole party can spend, not what each person can.
   final int budgetPhpCents;
   final String originArea;
+
+  /// Where the plan starts — see [SimplePlan.originLat].
+  final double? originLat;
+  final double? originLng;
+
   final int partySize;
   final int? radiusM;
 
@@ -72,6 +83,10 @@ class GeneratedPlan {
   /// show this, and per `docs/02-design-system.md` §2 it must carry an icon as
   /// well as a colour.
   final bool overBudget;
+
+  /// The payload this was parsed from — see [SimplePlan.sourcePayload]. Kept so
+  /// saving does not cost a second model call and return a different plan.
+  final Map<String, dynamic>? sourcePayload;
 
   bool get isEmpty => stops.isEmpty;
 }

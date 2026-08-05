@@ -4,6 +4,7 @@ import '../../models/plan.dart';
 import '../../theme/app_tokens.dart';
 import '../../util/format.dart';
 import '../../util/manila_time.dart';
+import '../plan/save_plan_button.dart';
 import 'plan_parts.dart';
 import 'plan_request_providers.dart';
 
@@ -105,6 +106,7 @@ class _PlanBlock extends StatelessWidget {
             ),
         ],
         TotalsBlock(totals: plan.totals),
+        SavePlanButton(payload: plan.sourcePayload, title: plan.title),
         if (plan.overBudget) ...[
           SizedBox(height: tokens.xs),
           // Colour and an icon, never colour alone (docs 02 §2). The server

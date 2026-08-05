@@ -7,6 +7,7 @@ import '../../theme/app_tokens.dart';
 import '../../ui/error_retry.dart';
 import '../../util/format.dart';
 import '../../util/manila_time.dart';
+import '../plan/save_plan_button.dart';
 import 'generated_plan_view.dart';
 import 'plan_parts.dart';
 import 'plan_request_providers.dart';
@@ -319,6 +320,7 @@ class _PlanView extends StatelessWidget {
         SizedBox(height: tokens.md),
         const Divider(),
         TotalsBlock(totals: plan.totals),
+        SavePlanButton(payload: plan.sourcePayload),
         if (plan.candidateActivities.isNotEmpty) ...[
           SizedBox(height: tokens.md),
           const Divider(),

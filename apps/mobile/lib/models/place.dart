@@ -68,6 +68,12 @@ class Place {
     this.barangay,
     this.priceMaxPhpCents,
     this.openingHours,
+    this.address,
+    this.contactNumber,
+    this.socialUrl,
+    this.notes,
+    this.verifiedOn,
+    this.verifiedMethod,
   });
 
   factory Place.fromMap(Map<String, dynamic> map) {
@@ -88,6 +94,18 @@ class Place {
         final Map<String, dynamic> hours => OpeningHours.fromMap(hours),
         _ => null,
       },
+      // Absent from the retrieval RPCs, present when a place is read on its
+      // own for Phase 4's detail screen. Null here means "not selected", not
+      // "not recorded" — the detail screen is the only caller that asks.
+      address: map['address'] as String?,
+      contactNumber: map['contact_number'] as String?,
+      socialUrl: map['social_url'] as String?,
+      notes: map['notes'] as String?,
+      verifiedOn: switch (map['verified_on']) {
+        final String date => DateTime.tryParse(date),
+        _ => null,
+      },
+      verifiedMethod: map['verified_method'] as String?,
     );
   }
 
@@ -113,4 +131,27 @@ class Place {
   /// Null when nothing has been recorded yet. Such a place is never retrieved,
   /// because "currently open" cannot be promised about hours nobody verified.
   final OpeningHours? openingHours;
+
+  // --- Read only by place detail (Phase 4) ----------------------------------
+  // Retrieval does not select these, so they are null on a stop inside a plan
+  // and populated when the place is opened on its own.
+
+  final String? address;
+
+  /// Both null on every row today — nothing has been collected. The detail
+  /// screen must omit them rather than render an empty label, which is why
+  /// they are nullable rather than defaulted to an empty string.
+  final String? contactNumber;
+  final String? socialUrl;
+
+  /// The lived-experience one-liner on the row itself, distinct from the
+  /// `place_notes` rows, which are many and dated.
+  final String? notes;
+
+  /// When a person established this row, and how — `visited`, `phoned` or
+  /// `resident` (`docs/00-architecture.md` §10.4a). Shown to the user as
+  /// provenance, because the design system requires a catalogue's weakest rows
+  /// to be distinguishable from its strongest (§2).
+  final DateTime? verifiedOn;
+  final String? verifiedMethod;
 }
