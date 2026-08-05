@@ -226,6 +226,11 @@ lib/
     startup.dart                     -- appStartupProvider + splash/failure
   util/
     manila_time.dart                 -- UTC <-> Asia/Manila, a fixed +8 offset
+    format.dart                      -- pesos(), distance(), duration(). Pure, so
+                                        the money-wording rule is tested directly
+                                        rather than through whichever screen.
+  ui/                                -- presentation shared across features
+    error_retry.dart                 -- the one error state every screen uses
   data/
     supabase_client_provider.dart    -- the one Provider<SupabaseClient>
     repository_exception.dart        -- the single error type repositories throw
@@ -239,6 +244,8 @@ lib/
   models/
     profile.dart
     resource.dart
+    party.dart                       -- Party.size, the ONLY place the party
+                                        multiplier is written down (§9)
     place.dart                       -- Phase 2
     activity.dart                    -- Phase 2
     simple_plan.dart                 -- Phase 2, the non-AI builder's output
@@ -261,7 +268,11 @@ lib/
       ideas_screen.dart
     plan_request/                    -- Phase 2+, the structured intake
       plan_request_providers.dart
-      plan_request_screen.dart
+      plan_request_screen.dart       -- the form, and the Phase 2 result
+      plan_parts.dart                -- stop/leg/totals rows, shared by BOTH
+                                        composers so neither is flattered by
+                                        rendering the other does not get
+      generated_plan_view.dart       -- Phase 3's result, beside Phase 2's
     chat/                            -- Phase 3b, the conversational shell
       chat_screen.dart
       chat_providers.dart
@@ -437,10 +448,12 @@ place_reports                         -- crowdsourced price truth
 
 plan_cache
   id  constraint_hash  payload jsonb  hit_count  created_at
-  places_version int                  -- bumped whenever a price is corrected or
-                                      -- a place is quarantined. Without it a
-                                      -- corrected row keeps serving stale totals
-                                      -- out of cache forever (§10.5).
+  places_version int                  -- read from public.places_version(), which
+                                      -- moves whenever the curated catalogue
+                                      -- does. Without it a corrected row keeps
+                                      -- serving stale totals out of cache
+                                      -- forever (§10.5) — which is what happened
+                                      -- until it was hardcoded to 1 and fixed.
 
 intake_cache                          -- utterance -> constraints, Phase 3b
   id  utterance_hash  constraints jsonb  hit_count  created_at
@@ -458,7 +471,20 @@ so re-importing an edited seed CSV updates the existing row instead of inserting
 duplicate. See §6.
 
 **Indexes:** btree on `places(city, price_min_php_cents)`, btree on `places(lat, lng)`,
-btree on `plan_cache(constraint_hash)`, btree on `plan_items(plan_id, seq)`.
+btree on `plan_items(plan_id, seq)`.
+
+> **`places(lat, lng)` does not serve the distance filter, and cannot.** Retrieval
+> ranks by `haversine_m`, and no btree can answer a distance predicate — Postgres
+> scans the city's rows and computes. The index is therefore unused in practice
+> and the performance advisor correctly says so. It is harmless at any catalogue
+> size D3 describes (200–300 rows in one municipality), so it stays; what must not
+> happen is someone reading this list and concluding distance filtering is
+> indexed. **If it ever does hurt, the answer is a bounding-box prefilter on
+> lat/lng before the haversine, not a different index.**
+>
+> `plan_cache(constraint_hash)` needs no entry here: the column is `unique`, and
+> Postgres backs a unique constraint with its own index. A hand-added second one
+> was dropped in `20260805085843` for exactly that reason.
 
 **RLS:** every table, from its creating migration. `places`, `activities`,
 `transit_fares`, and `resource_catalog` are world-readable but insert/update only by

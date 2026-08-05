@@ -66,6 +66,43 @@ Gotchas found building it, worth not rediscovering:
 - **Rejection logging goes to the Edge Function console**, prefixed
   `PLAN_REJECTED`. Free-tier retention is short — copy anything worth keeping.
 
+## Review pass — what it found
+
+Run after Phase 3 landed, because three phases had gone in fast. Supabase security
+advisors came back clean: the only two items are `plan_cache` having RLS with no
+policies (that *is* "service role only") and leaked-password protection (Pro-only,
+D7, permanently deferred). No missing RLS, no exposed function, no unindexed FK.
+
+Three things that could have produced wrong money or stale data, all fixed:
+
+- **Party size had two homes** — a constant in each of the two repositories, plus
+  `= 2` defaults in two models. That is the multiplier turning per-person prices
+  into party totals (§9). Had they drifted, the crude builder and the model would
+  have reported different totals for the same plan — the exact bug §9 was written
+  to end. Now `Party.size`, in one file.
+- **The plan cache could never invalidate.** `placesVersion` was hardcoded to `1`,
+  so the column that exists to evict stale plans never changed: correct a price,
+  re-import, and the old total is served forever. Now reads
+  `public.places_version()`, which moves with `max(verified_at)` and the row count
+  — no new column, because the importer already stamps `verified_at` on every
+  upsert. **Verified: a re-import moves it by ~458,000.**
+- **`_pesos` was duplicated byte-for-byte** across two screens. Not ordinary
+  duplication — it encodes the `zeroIsFree` rule learned by getting it wrong three
+  times on a device, so the two copies could have been fixed apart. Now
+  `lib/util/format.dart`, tested directly for the first time.
+
+Also: `_ErrorRetry` deduplicated into a new `lib/ui/`, the 641-line plan screen
+split into three files, and a redundant index on `plan_cache.constraint_hash`
+dropped (the `unique` constraint already indexes it).
+
+**Recorded, not fixed:** `places_lat_lng_idx` cannot serve the haversine filter —
+no btree can answer a distance predicate. Harmless at 300 rows, so it stays, but
+§5 no longer implies distance filtering is indexed. If it ever hurts, the answer
+is a bounding-box prefilter, not another index.
+
+50 tests, up from 41, with all 41 unchanged — the refactor was behaviour-preserving
+and the old suite is the proof.
+
 Everything else passes: `flutter analyze` clean, 23 tests green, the migration
 applied, the SQL assertions (haversine, fare symmetry, past-midnight hours)
 verified against the live database, and the full flow driven on the S25 Ultra in
