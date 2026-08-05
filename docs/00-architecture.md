@@ -805,6 +805,24 @@ independent SQL recomputation exactly; second identical request is a cache hit.
 > **Acceptance cannot be met on placeholder data**, for the same reason Phase 2's
 > could not: "zero invalid IDs" is measurable against `test-*` rows, but "is the
 > plan any good" is not. Run the 20 generations once real places exist.
+>
+> **The acceptance run is a command**, not a procedure to reconstruct:
+> `node supabase/functions/generate-plan/acceptance.mjs`. It signs up a throwaway
+> account through the ordinary public auth endpoint, runs 20 generations across
+> varying budgets and times, checks that none were refused, repeats the first
+> request to prove a cache hit, and writes every plan out as JSON.
+>
+> **It covers two of the three criteria and says so.** The third — "every total
+> matches an independent SQL recomputation" — is done by hand against `places` and
+> `transit_fares`, and **must not go through `cost_generated_plan`**, which is the
+> function under test. A function confirming its own arithmetic proves nothing.
+>
+> With no key set, the script stops before creating anything and prints what to do.
+>
+> **The plan tables have no writer yet, deliberately.** `plans`, `plan_items` and
+> `plan_legs` are created here because §5's phasing note puts them here, but
+> nothing writes them until Phase 4, whose acceptance is "generate, **save**,
+> reopen". That is the plan, not drift — do not "fix" it by adding a writer early.
 
 > **Driven by Phase 2's structured intake, not by chat.** The conversational
 > layer is Phase 3b. Keeping them apart means generation is proven against a

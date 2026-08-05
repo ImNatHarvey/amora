@@ -54,6 +54,31 @@ call returns 404, set that secret rather than editing the function** — the err
 message says so too. Model names move faster than deploys and D8 makes the model a
 config choice.
 
+**Run acceptance with:** `node supabase/functions/generate-plan/acceptance.mjs`.
+With no key set it stops before creating anything and prints what to do. It covers
+20 generations and the cache hit; recomputing totals against `places` and
+`transit_fares` is still done by hand, and **must not use `cost_generated_plan`** —
+that is the function being tested.
+
+### Two defects found closing Phase 3 out
+
+Both were in Phase 3's own code, neither had symptoms yet:
+
+- **The cache key collided across days.** `constraintHash` shifted the hour into
+  Manila but read the day from UTC, so for any Manila time between midnight and
+  08:00 the day was one behind — **Manila Sunday 02:00 and Manila Saturday 09:00
+  hashed identically**. Opening hours are per day, so the second caller could have
+  been served a plan composed for a day the places are shut. Fixed by deriving both
+  the hour and the day from one Manila instant. Checked in both directions: the
+  collision separates, and two requests that genuinely share a Manila day and
+  bucket still merge — otherwise the "fix" would just be breaking the cache.
+- **Party size had three hardcoded `2`s** in the Edge Function, the server-side
+  twin of the Dart bug fixed the day before. Worse here: one fed the cache key and
+  another fed the costing call, so a drift would have cached a plan under one party
+  size and costed it for another. Now one `DEFAULT_PARTY_SIZE`.
+
+**The plan tables are deliberately writer-less** until Phase 4 — see §8. Not drift.
+
 Gotchas found building it, worth not rediscovering:
 
 - **`cost_generated_plan` first omitted `slug` from each stop**, which
@@ -65,6 +90,10 @@ Gotchas found building it, worth not rediscovering:
   "service role only". It is not a mistake and does not need a policy added.
 - **Rejection logging goes to the Edge Function console**, prefixed
   `PLAN_REJECTED`. Free-tier retention is short — copy anything worth keeping.
+- **`process.exit()` in a Node script that used `fetch` trips a libuv assertion
+  on Windows** — the process dies with exit 127 instead of the code it meant to
+  return, because keep-alive sockets are still open. Set `process.exitCode` and
+  return instead. Cost twenty minutes in the acceptance harness.
 
 ## Review pass — what it found
 

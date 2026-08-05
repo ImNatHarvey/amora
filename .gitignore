@@ -6,6 +6,12 @@
 # (docs/00-architecture.md §6); this is disposable output of csv_to_sql.mjs.
 seed.sql
 
+# Acceptance-run evidence. Written by
+# supabase/functions/generate-plan/acceptance.mjs and regenerated every run, so
+# it is output rather than record — and it carries the throwaway account's
+# address, which has no business in git.
+.acceptance/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -29,6 +29,23 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/**
+ * D1: couples. The server-side twin of Dart's `Party.size`.
+ *
+ * One constant because this number reaches two different places — the cache key
+ * and the costing call — and if a request were ever hashed under one party size
+ * and costed for another, the cache would hand back a total for the wrong number
+ * of people. It was three separate `?? 2` literals until that was noticed.
+ */
+const DEFAULT_PARTY_SIZE = 2;
+
+/**
+ * Manila is UTC+8 with no daylight saving, so a fixed offset is exact rather
+ * than an approximation. Same rule as `lib/util/manila_time.dart` on the device;
+ * stated once here so the two sides cannot drift.
+ */
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
+
 /** What the model is allowed to return. Nothing here is a fact about a place. */
 const RESPONSE_SCHEMA = {
   type: 'object',
@@ -82,9 +99,16 @@ interface PlanRequest {
  * Saturday evening from the same barangay are the same question.
  */
 async function constraintHash(req: PlanRequest, placesVersion: number): Promise<string> {
-  const when = new Date(req.planned_for);
-  // Manila wall clock: the server runs UTC and "evening" is a local idea.
-  const manilaHour = (when.getUTCHours() + 8) % 24;
+  // ONE Manila instant, and both the hour and the day read from it.
+  //
+  // This previously shifted the hour but took the day from UTC, which put the
+  // day one behind for every Manila time between midnight and 08:00 — so
+  // Manila Sunday 02:00 and Manila Saturday 09:00 hashed identically. Opening
+  // hours are per day, so the second caller could be served a plan composed for
+  // a day the places are shut. A cache that returns the wrong answer is worse
+  // than no cache; it is a confident wrong total delivered fast.
+  const manila = new Date(new Date(req.planned_for).getTime() + MANILA_OFFSET_MS);
+  const manilaHour = manila.getUTCHours();
   const timeBucket = manilaHour < 11 ? 'morning' : manilaHour < 16 ? 'afternoon' : 'evening';
 
   const parts = [
@@ -92,12 +116,13 @@ async function constraintHash(req: PlanRequest, placesVersion: number): Promise<
     // Budget to the nearest ₱50.
     Math.round(req.budget_php_cents / 5000) * 5000,
     timeBucket,
-    // Day of week matters — a place open Saturday may be shut Tuesday.
-    when.getUTCDay(),
+    // Day of week matters — a place open Saturday may be shut Tuesday. Read
+    // from the Manila instant, not the UTC one.
+    manila.getUTCDay(),
     // ~500 m grid. Finer than this and neighbours never share a cache entry.
     req.origin_lat.toFixed(2),
     req.origin_lng.toFixed(2),
-    req.party_size ?? 2,
+    req.party_size ?? DEFAULT_PARTY_SIZE,
     // Sorted fingerprint. Without it two users with the same budget and
     // location but different gear collide, and one gets a plan needing
     // equipment they do not own (§9).
@@ -132,7 +157,7 @@ function buildPrompt(
     '  stop suits this couple. It must contain no facts not given below.',
     '- Order stops so the evening flows sensibly.',
     '',
-    `The couple has ${req.party_size ?? 2} people and is starting from ${req.origin_area}.`,
+    `The couple has ${req.party_size ?? DEFAULT_PARTY_SIZE} people and is starting from ${req.origin_area}.`,
     `They are planning for ${req.planned_for}.`,
     '',
     'PLACES (the only ones you may reference):',
@@ -224,7 +249,7 @@ Deno.serve(async (request) => {
     );
 
     const req = await request.json() as PlanRequest;
-    const party = req.party_size ?? 2;
+    const party = req.party_size ?? DEFAULT_PARTY_SIZE;
     const owned = req.owned_resource_ids ?? [];
 
     // --- step 2: cache -----------------------------------------------------
