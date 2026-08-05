@@ -52,6 +52,7 @@ const CSV_SPECS = {
       'slug', 'name', 'category', 'lat', 'lng', 'address', 'barangay', 'city',
       'opening_hours', 'price_min_php', 'price_max_php', 'indoor',
       'sunset_facing', 'social_url', 'contact_number', 'notes', 'verified_on',
+      'verified_method',
     ],
     key: ['slug'],
   },
@@ -394,6 +395,50 @@ on conflict (slug) do update set
   );
 }
 
+const VERIFIED_METHODS = ['visited', 'phoned', 'resident'];
+
+/**
+ * §10.4a, made mechanical.
+ *
+ * Two rules, both of which would otherwise be a habit someone remembers or
+ * doesn't. A typo ('phone', 'visit') would fail at the database as a constraint
+ * violation with no idea which row caused it; catching it here names the file and
+ * the slug. And a priced row marked `resident` is the one thing §10.4a forbids
+ * outright — a price recalled from memory is a guess with a local accent, and the
+ * whole desk-verification argument collapses the moment one gets in.
+ *
+ * Blank is allowed: the column is new, and a row that has not said how it was
+ * established is honest about that. It is the *combination* of a price and a
+ * claim of resident knowledge that is never allowed.
+ */
+function assertVerifiedMethods(rows) {
+  for (const r of rows) {
+    const method = (r.verified_method ?? '').trim();
+    const where = `${r.__file}:${r.__line}`;
+
+    if (method !== '' && !VERIFIED_METHODS.includes(method)) {
+      throw new Error(
+        `${where} — verified_method is "${method}" on '${r.slug}'. ` +
+          `Expected one of: ${VERIFIED_METHODS.join(', ')}.`,
+      );
+    }
+
+    const price = Number.parseFloat(r.price_min_php || '0') || 0;
+    if (method === 'resident' && price > 0) {
+      throw new Error(
+        `${where} — '${r.slug}' claims verified_method "resident" with a price ` +
+          `of ₱${price}.\n` +
+          '  A price may only come from a visit or a phone call ' +
+          '(docs/00-architecture.md §10.4a).\n' +
+          '  Resident knowledge covers facts that do not move, and a price is ' +
+          'not one of them.\n' +
+          '  Either phone the place and record what they say, or drop the price ' +
+          'to 0 if it is genuinely free.',
+      );
+    }
+  }
+}
+
 function placesSql(rows) {
   return rows.map((r) => {
     const ctx = (field) => ({ field, row: r });
@@ -401,7 +446,7 @@ function placesSql(rows) {
   slug, name, category, lat, lng, address, barangay, city, opening_hours,
   price_min_php_cents, price_max_php_cents, indoor, sunset_facing,
   verification_tier, source, social_url, contact_number, notes,
-  verified_at, verified_on
+  verified_at, verified_on, verified_method
 ) values (
   ${sqlText(r.slug)}, ${sqlText(r.name)}, ${sqlText(r.category)},
   ${sqlNumber(r.lat, ctx('lat'))}, ${sqlNumber(r.lng, ctx('lng'))},
@@ -412,7 +457,8 @@ function placesSql(rows) {
   ${sqlBool(r.indoor)}, ${sqlBool(r.sunset_facing)},
   'curated', 'owner',
   ${sqlText(r.social_url)}, ${sqlText(r.contact_number)}, ${sqlText(r.notes)},
-  now(), ${r.verified_on === '' ? 'null' : `${sqlText(r.verified_on)}::date`}
+  now(), ${r.verified_on === '' ? 'null' : `${sqlText(r.verified_on)}::date`},
+  ${sqlText(r.verified_method)}
 )
 on conflict (slug) do update set
   name = excluded.name,
@@ -430,7 +476,8 @@ on conflict (slug) do update set
   social_url = excluded.social_url,
   contact_number = excluded.contact_number,
   notes = excluded.notes,
-  verified_on = excluded.verified_on;`;
+  verified_on = excluded.verified_on,
+  verified_method = excluded.verified_method;`;
   });
 }
 
@@ -561,6 +608,10 @@ function main() {
     readCsv('transit_fares.csv'), 'from_area', 'transit_fares', skipped);
   const notes = withoutExamples(
     readCsv('place_notes.csv'), 'place_slug', 'place_notes', skipped);
+
+  // Validate before emitting a single statement, like every other check here:
+  // a refusal costs nothing, a half-applied seed costs a manual cleanup.
+  assertVerifiedMethods(places);
 
   const sections = [
     ['resource_catalog', resourceCatalogSql(resources)],
