@@ -6,9 +6,15 @@ CSVs get filled in at a desk afterwards.
 
 Formats and the full grammar live in `README.md`. This file is the field copy.
 
-**Target: 15 places.** Read **"Spread"** before deciding where to go — *where*
-they are matters as much as how many, and getting it wrong means no fare is ever
-exercised by a real plan.
+> **Most rows do not need this file.** The free public layer is verifiable from
+> resident knowledge plus OpenStreetMap, and a priced place is verifiable by
+> phone — see `DESK-CHECKLIST.md` and `docs/00-architecture.md` §10.4a. Use this
+> copy for the rows a desk genuinely cannot reach: a place whose hours you cannot
+> confirm any other way, and `place_notes`, which a phone call never gets.
+
+**Target: 8 places**, of which as many as possible are collected at a desk. Read
+**"Spread"** before deciding where to go — *where* they are matters as much as how
+many, and getting it wrong means no fare is ever exercised by a real plan.
 
 On this page: the three silent breakers · per place · where leads come from ·
 per fare ride (incl. the **riding list**) · DIY tutorial videos · spread ·
@@ -213,11 +219,18 @@ walk and no fare is ever looked up.
 **So, for the fare path to be genuinely exercised:**
 
 - **At least 3 barangays**, and realistically 4.
-- **No more than about 5 places in any one barangay** — concentration is what
-  keeps legs short.
-- Suggested split of the 15: **Poblacion 5, Turo 4, Bunlo 3, Lolomboy 3.**
+- **At least one barangay holding no more than 2 places.** This is the rule that
+  does the work, and the earlier version of this section missed it: a suggested
+  split with 3+ places in *every* barangay lets a plan sit entirely inside its
+  origin, all legs walks, `fare_for` never called — the exact failure this section
+  exists to prevent. Two places in the origin barangay forces the third stop across
+  a boundary. **Start the acceptance run from that barangay.**
+- **No more than about 5 places in any one barangay.** Concentration is what keeps
+  legs short, and short legs are free legs.
+- Suggested split of the first 8: **Poblacion 3, Turo 2, Bunlo 2, Lolomboy 1.**
   All six pairs among those four already have fare rows, so a plan crossing any
-  of them costs out completely the day the data lands.
+  of them costs out completely the day the data lands. At 8 places over 4
+  barangays the ≤2 rule is nearly automatic; it is what keeps this true at 20.
 - Adjacent barangay centroids in Bocaue are comfortably over 800 m apart, so any
   cross-barangay leg will trigger a real fare lookup rather than a walk.
 
@@ -232,6 +245,19 @@ catalogue grows.
 Fill the CSVs in this order, since later files reference earlier ones:
 `places.csv` → `transit_fares.csv` → `place_notes.csv` (references place slugs)
 → `activities.csv` (only if you added tutorial URLs).
+
+⚠️ **Step 0, before anything else: delete the `test-*` rows from `places.csv` and
+`place_notes.csv`.**
+
+The CSVs are the source of truth, so a placeholder left in one is re-inserted by the
+very next import regardless of what you delete from the database. The sequence below
+generates *before* it deletes — which is what makes a validation failure free — and
+that only works if the file being generated from no longer holds the placeholders.
+Skip this and step 4 will read 30 places and 15 leftovers.
+
+Clear **both** files or neither: `place_notes.csv` rows pointing at deleted place
+slugs abort the import with "Unknown place slug(s) in place_notes.csv". That is the
+importer working — a loud failure instead of a silent one.
 
 Then run the sequence below from `C:\Users\jharv\amora`. **The order matters:**
 generate before deleting, so a validation failure costs you nothing.
@@ -254,7 +280,7 @@ delete from public.places where slug like 'test-%';
 ```
 
 ```sql
--- 4. Verify. The first three should read 15, 0, 0.
+-- 4. Verify. The first should be at least 8; the next two must be 0.
 select count(*) as places     from public.places;
 select count(*) as leftovers  from public.places where slug like 'test-%';
 select count(*) as unusable   from public.places
@@ -276,14 +302,21 @@ where not exists (
 ```
 
 5. `flutter run` on the device and build a plan from a real barangay — **once at
-   ₱200 and once at ₱600.** Three real, currently-open places with costed legs
-   **is Phase 2's acceptance criterion**, and that run is what closes the phase.
+   ₱0 and once at ₱100–₱200**, both starting from the barangay holding 2 places.
+   Three real, currently-open places with costed legs **is Phase 2's acceptance
+   criterion**, and that run is what closes the phase.
 
-   Run both because ₱200 is the *couple's* budget, so retrieval only admits places
-   at ₱100 a head. If ₱200 returns almost nothing but ₱600 works, retrieval is
-   fine and you have learned something real about Bocaue's price floor. If ₱600
-   returns nothing either, the problem is the data or the query. Two runs turn an
-   ambiguous failure into a diagnosis.
+   ⚠️ **The ₱0 plan will be walk-only, and that is correct.** The budget check
+   includes the leg fare, so at a budget of zero no paid ride can ever be admitted.
+   It looks exactly like a broken fare path and is not one — the second run is what
+   exercises `fare_for`.
+
+   Run both because they fail differently. ₱0 proves the free layer and that ₱0 is
+   a real budget rather than an empty screen. ₱100–₱200 is the *couple's* budget, so
+   retrieval admits places at ₱50–₱100 a head and a fare finally lands in a total.
+   If the second returns nothing, that is a finding about Bocaue's price floor and
+   the priced layer needing more phone calls — not a Phase 2 failure. Two runs turn
+   an ambiguous failure into a diagnosis.
 
 Re-running the import after editing a row updates that row; it never duplicates.
 Editing a price and re-importing is the normal way to correct data.

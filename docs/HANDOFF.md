@@ -12,6 +12,21 @@ applied, and verified on the phone — but NOT accepted.** One thing is left:
 **Acceptance needs real places.** The criterion is "real, currently-open places";
 all 15 rows are still `test-*`. See "Seed data" below. Nothing else blocks it.
 
+> **The way that debt gets paid changed on 2026-08-05.** It stood open on the
+> assumption that a row costs a journey, so the catalogue cost an expedition nobody
+> booked. Nat ruled out fieldwork entirely and asked for the alternatives; a
+> generated catalogue was considered and rejected outright (it breaks D3, §10.4 and
+> CLAUDE.md's hard rule, and publishes invented prices attached to real named
+> businesses). What survived is **§10.4a: the catalogue is buildable at a desk** —
+> the free public layer from resident knowledge plus OpenStreetMap coordinates, and
+> priced places by phone, both of which §10.4 already sanctioned and neither of
+> which had ever been written up.
+>
+> **Nothing was weakened to get there.** No decision reversed, no invariant
+> reworded, no phase moved. The target dropped from 15 places to 8 because the
+> *cost* of a verified row fell, not the standard it must meet. `supabase/seed/DESK-CHECKLIST.md`
+> is the procedure.
+
 Everything else passes: `flutter analyze` clean, 23 tests green, the migration
 applied, the SQL assertions (haversine, fare symmetry, past-midnight hours)
 verified against the live database, and the full flow driven on the S25 Ultra in
@@ -53,7 +68,8 @@ a place you are already in.** "Day 3 in Manila with ₱500" is Amora and needs o
 data. "Plan my Cebu trip" is a different product where our moat is worth nothing —
 at trip scale a ₱25 tricycle fare is 0.17% of the budget instead of 12%.
 
-**Next action is the field checklist, not this file.**
+**Next action is `supabase/seed/DESK-CHECKLIST.md`, not this file.** It was the field
+checklist until 2026-08-05; most of the first eight rows no longer need a journey.
 
 ## Review findings — read before the data run
 
@@ -85,9 +101,11 @@ reports do not require a completed plan; price reports do. Correction is
 **additive** — community values go in their own columns, and the hand-verified
 value is never overwritten.
 
-**It does not lower the field bar.** The correction loop needs completed plans and
-a wrong seed prevents completion, so bad rows are abandoned rather than fixed.
-15 hand-verified rows stays the target.
+**It does not lower the bar on collection.** The correction loop needs completed
+plans and a wrong seed prevents completion, so bad rows are abandoned rather than
+fixed. The target is now 8 rather than 15, and that is a statement about what a row
+*costs* (§10.4a), not about what one has to be worth. A ninth row invented to reach
+a round number would be worth less than nothing.
 
 ## The intake is a conversation now — decided, don't reopen
 
@@ -234,6 +252,18 @@ All 15 rows in `places` are `test-*` / `(TEST)` stand-ins with invented
 coordinates, prices and hours. `place_notes` likewise. They exist to prove the
 import pipeline, nothing more.
 
+**Replacing them is now a desk job.** Target 8 across at least 3 barangays: layer 1
+is the free public layer — plazas, parks, riverside, church grounds, covered courts,
+the market — recorded from what Nat already knows first-hand, with coordinates off
+OpenStreetMap and `verified_on` set to the honest date he was last actually there.
+Layer 2 is priced places by phone, three questions and ninety seconds each. Full
+rules and the limits of each: `docs/00-architecture.md` §10.4a. Procedure:
+`supabase/seed/DESK-CHECKLIST.md`.
+
+**What a phone call cannot reach** is `place_notes` — nobody describes their own
+second floor as having no lift. A phoned row is a real row and a thinner one; the
+notes get filled in the day he happens to be there.
+
 **What Phase 2 revealed about what the fieldwork needs.** Building first was
 supposed to answer this, and it did:
 
@@ -258,9 +288,19 @@ supposed to answer this, and it did:
   3 barangays, max ~5 places in any one** — suggested split Poblacion 5, Turo 4,
   Bunlo 3, Lolomboy 3. All six pairs among those four already have fare rows.
 
-**`supabase/seed/FIELD-CHECKLIST.md` is the phone-friendly capture list** — field
-order, the mandatory-column traps, and the fare-ride instructions. Take that out;
-leave this file at the desk.
+**`supabase/seed/DESK-CHECKLIST.md` is where collection starts now.**
+`FIELD-CHECKLIST.md` remains the phone-friendly capture list for rows a desk cannot
+reach — field order, the mandatory-column traps, the fare-ride instructions, and the
+shared import sequence both checklists use. Take that one out; leave this file at the
+desk.
+
+**Two traps were found in the field copy during review and are now fixed there.**
+The desk sequence generated `seed.sql` *before* deleting the placeholders, but the
+placeholders live in the CSVs — so the apply put all 15 straight back. And the
+suggested barangay split gave every barangay 3+ places, which lets a whole plan sit
+inside its origin with every leg a walk and `fare_for` never called: the exact
+failure the spread section exists to prevent. The rule that fixes it is **one
+barangay with no more than 2 places, and start the acceptance run there.**
 
 **Real:** `resource_catalog` (30 rows) and `transit_fares` (15 real barangay
 routes — Poblacion, Turo, Bunlo, Lolomboy, Duhat, Wakas, Batia, plus Marilao and
@@ -278,9 +318,10 @@ Balagtas). `activities` (16) are generic and fine.
 > `verified_at` is also null on all nine — nothing currently records that anyone
 > has ridden any of them.
 
-Wipe the placeholders with:
+Wipe the placeholders — **from the CSVs first**, or the next import restores them:
 
 ```sql
+-- only after places.csv and place_notes.csv are clean and seed.sql has generated
 delete from public.places where slug like 'test-%';   -- notes cascade
 ```
 
