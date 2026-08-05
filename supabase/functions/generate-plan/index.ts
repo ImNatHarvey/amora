@@ -228,14 +228,32 @@ Deno.serve(async (request) => {
     const owned = req.owned_resource_ids ?? [];
 
     // --- step 2: cache -----------------------------------------------------
-    const placesVersion = 1;
-    const hash = await constraintHash(req, placesVersion);
+    // The catalogue's version is folded into the key so a corrected price
+    // evicts the plans built on the old one. This was hardcoded to 1 in the
+    // first cut, which meant the cache could never forget: fix a price,
+    // re-import, and every stale total is served forever.
+    //
+    // If the lookup fails, fall back to caching nothing rather than caching
+    // against a version we are not sure of. A wrong version is worse than no
+    // cache — one costs a generation, the other serves a confident wrong total.
+    const { data: versionData, error: versionError } =
+      await admin.rpc('places_version');
+    if (versionError) {
+      console.error('PLACES_VERSION_FAILED', JSON.stringify(versionError));
+    }
+    const placesVersion = versionError ? null : Number(versionData);
 
-    const { data: cached } = await admin
-      .from('plan_cache')
-      .select('id, payload, hit_count')
-      .eq('constraint_hash', hash)
-      .maybeSingle();
+    const hash = placesVersion === null
+      ? null
+      : await constraintHash(req, placesVersion);
+
+    const { data: cached } = hash === null
+      ? { data: null }
+      : await admin
+          .from('plan_cache')
+          .select('id, payload, hit_count')
+          .eq('constraint_hash', hash)
+          .maybeSingle();
 
     if (cached) {
       await admin
@@ -342,11 +360,16 @@ Deno.serve(async (request) => {
 
     // --- cache the result --------------------------------------------------
     // Failing to cache must not fail the request: the user has a valid plan in
-    // hand and a cache miss next time is cheaper than an error now.
-    const { error: cacheError } = await admin
-      .from('plan_cache')
-      .insert({ constraint_hash: hash, payload, places_version: placesVersion });
-    if (cacheError) console.error('CACHE_WRITE_FAILED', JSON.stringify(cacheError));
+    // hand and a cache miss next time is cheaper than an error now. Skipped
+    // entirely when the catalogue version could not be read, for the same
+    // reason — an entry keyed on a version we are unsure of would be worse
+    // than no entry at all.
+    if (hash !== null) {
+      const { error: cacheError } = await admin
+        .from('plan_cache')
+        .insert({ constraint_hash: hash, payload, places_version: placesVersion });
+      if (cacheError) console.error('CACHE_WRITE_FAILED', JSON.stringify(cacheError));
+    }
 
     return json(payload);
   } catch (error) {

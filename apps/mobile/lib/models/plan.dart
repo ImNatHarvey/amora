@@ -1,3 +1,4 @@
+import 'party.dart';
 import 'simple_plan.dart';
 
 /// One plan as returned by the `generate-plan` Edge Function.
@@ -22,7 +23,7 @@ class GeneratedPlan {
     required this.legs,
     required this.totals,
     required this.overBudget,
-    this.partySize = 2,
+    this.partySize = Party.size,
     this.radiusM,
   });
 
@@ -35,7 +36,7 @@ class GeneratedPlan {
       plannedForUtc: DateTime.parse(map['planned_for'] as String).toUtc(),
       budgetPhpCents: map['budget_php_cents'] as int,
       originArea: origin['area'] as String,
-      partySize: map['party_size'] as int? ?? 2,
+      partySize: map['party_size'] as int? ?? Party.size,
       radiusM: map['radius_m'] as int?,
       stops: [
         for (final stop in map['stops'] as List)

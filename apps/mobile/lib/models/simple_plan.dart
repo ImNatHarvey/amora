@@ -1,4 +1,5 @@
 import 'activity.dart';
+import 'party.dart';
 import 'place.dart';
 
 /// A barangay a plan can start from, with a coordinate to measure against.
@@ -178,7 +179,7 @@ class SimplePlan {
     required this.legs,
     required this.totals,
     required this.candidateActivities,
-    this.partySize = 2,
+    this.partySize = Party.size,
     this.radiusM,
   });
 
@@ -188,7 +189,10 @@ class SimplePlan {
       plannedForUtc: DateTime.parse(map['planned_for'] as String).toUtc(),
       budgetPhpCents: map['budget_php_cents'] as int,
       originArea: origin['area'] as String,
-      partySize: map['party_size'] as int? ?? 2,
+      // The server always sends it. The fallback is a floor, not a guess: it
+      // matches what the RPC itself defaults to, so a missing value can never
+      // silently cost the outing for one person.
+      partySize: map['party_size'] as int? ?? Party.size,
       radiusM: map['radius_m'] as int?,
       stops: [
         for (final stop in map['stops'] as List)

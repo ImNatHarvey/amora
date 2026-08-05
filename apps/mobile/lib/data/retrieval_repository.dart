@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/activity.dart';
+import '../models/party.dart';
 import '../models/simple_plan.dart';
 import 'repository_exception.dart';
 import 'supabase_client_provider.dart';
@@ -39,14 +40,9 @@ class RetrievalRepository {
     );
   }
 
-  /// How many people the plan is for.
-  ///
-  /// Two, because D1 scopes the MVP to couples. It is a named constant rather
-  /// than a literal because prices are stored per person and this is the
-  /// multiplier that turns them into what the outing costs — see
-  /// `docs/00-architecture.md` §9. It becomes `plans.party_size` when friends
-  /// and families arrive (§11).
-  static const partySize = 2;
+  /// How many people the plan is for — see [Party.size], which is the only
+  /// place this number is written down.
+  static const partySize = Party.size;
 
   /// Activities the party can afford and already owns the gear for.
   ///

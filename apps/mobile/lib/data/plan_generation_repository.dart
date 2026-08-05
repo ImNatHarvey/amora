@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/party.dart';
 import '../models/plan.dart';
 import '../models/simple_plan.dart';
 import 'repository_exception.dart';
@@ -74,9 +75,10 @@ class PlanGenerationRepository {
     );
   }
 
-  /// How many people the plan is for. Two while D1 scopes the MVP to couples;
-  /// the same constant the retrieval path uses, for the same reason (§9).
-  static const partySize = 2;
+  /// How many people the plan is for. [Party.size], the same number the
+  /// retrieval path sends — if these two ever disagreed, the crude builder and
+  /// the model would report different totals for the same plan.
+  static const partySize = Party.size;
 }
 
 final planGenerationRepositoryProvider = Provider<PlanGenerationRepository>(
