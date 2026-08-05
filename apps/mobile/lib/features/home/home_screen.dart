@@ -60,7 +60,15 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
               SizedBox(height: tokens.lg),
+              // Ideas leads, because it is the one that works today: it needs
+              // no curated place, only the activities and the gear list, both
+              // of which are real. "Plan something" needs the catalogue.
               FilledButton(
+                onPressed: () => context.push(Routes.ideas),
+                child: const Text('Find something to do'),
+              ),
+              SizedBox(height: tokens.sm),
+              OutlinedButton(
                 onPressed: () => context.push(Routes.plan),
                 child: const Text('Plan something'),
               ),

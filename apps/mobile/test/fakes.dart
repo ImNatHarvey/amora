@@ -2,6 +2,7 @@ import 'package:mobile/data/auth_repository.dart';
 import 'package:mobile/data/profiles_repository.dart';
 import 'package:mobile/data/resources_repository.dart';
 import 'package:mobile/data/retrieval_repository.dart';
+import 'package:mobile/models/activity.dart';
 import 'package:mobile/models/profile.dart';
 import 'package:mobile/models/resource.dart';
 import 'package:mobile/models/simple_plan.dart';
@@ -123,6 +124,31 @@ class FakeRetrievalRepository implements RetrievalRepository {
   final Object? error;
 
   int buildCount = 0;
+
+  /// Returned by [activitiesWithin], unfiltered — the fake does no filtering of
+  /// its own on purpose. Budget and gear filtering is Postgres's job
+  /// (`retrieve_activities`), and a fake that reimplemented it would be testing
+  /// the fake. What the widget tests check is what the screen does with a list.
+  List<Activity> activities = const [];
+
+  /// Every per-person budget asked for, in centavos, in call order.
+  ///
+  /// A list rather than a "last value", because the ideas screen makes two
+  /// calls per render: the filtered one the user asked for, and an unfiltered
+  /// one behind it that counts the whole catalogue so an empty list can say
+  /// what it is empty *of*. Recording only the last would silently assert
+  /// against the wrong one.
+  final activityBudgetsPhpCents = <int>[];
+
+  @override
+  Future<List<Activity>> activitiesWithin({
+    required int budgetPhpCents,
+    required Set<String> ownedResourceIds,
+  }) async {
+    if (error != null) throw error!;
+    activityBudgetsPhpCents.add(budgetPhpCents ~/ RetrievalRepository.partySize);
+    return activities;
+  }
 
   @override
   Future<List<OriginArea>> originAreas(String city) async => areas;

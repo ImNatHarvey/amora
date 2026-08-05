@@ -254,6 +254,9 @@ lib/
       resource_icons.dart            -- icon-name -> IconData lookup
     dev/
       token_gallery_screen.dart      -- /dev/tokens, the light/dark check surface
+    ideas/                           -- "what could we do", no places needed
+      ideas_providers.dart
+      ideas_screen.dart
     plan_request/                    -- Phase 2+, the structured intake
       plan_request_providers.dart
       plan_request_screen.dart
@@ -716,6 +719,23 @@ isn't useful, the AI won't save it.**
 > **Acceptance is blocked on seed data, not code**, and deliberately so: building
 > first established which fields the fieldwork actually needs. See the Phase 0 open
 > debt above.
+>
+> **The Ideas screen (`/ideas`) is the half of this phase that works today.**
+> `retrieve_activities` needs no curated place — activities carry a budget and a
+> gear requirement but no location, because the place supplies the where (§5). So
+> while the catalogue is being built, the app can answer *what could we do* on data
+> that is already real: 16 activities and the user's own resource list. It is not a
+> new phase and it introduces no new machinery; it is one repository method and a
+> screen over a Postgres function Phase 2 already shipped.
+>
+> **It must never drift into answering *where*.** The moment it names a place it is
+> either reading the catalogue — in which case that is the plan screen's job — or
+> inventing one, which is D2 and D3. The honest division is that Ideas answers the
+> cheap question and the plan screen answers the expensive one.
+>
+> The party budget is halved before it reaches `retrieve_activities`, exactly as
+> `build_simple_plan` does with the same number, so the two surfaces cannot
+> disagree about what ₱200 buys. That division is regression-tested.
 
 **Phase 3 — Gemini generation**
 Edge function, `responseSchema`, validation layer, rejection logging, plan_cache.

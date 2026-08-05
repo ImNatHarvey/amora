@@ -27,6 +27,16 @@ all 15 rows are still `test-*`. See "Seed data" below. Nothing else blocks it.
 > *cost* of a verified row fell, not the standard it must meet. `supabase/seed/DESK-CHECKLIST.md`
 > is the procedure.
 
+**In the meantime, `/ideas` ships.** `retrieve_activities` needs no curated place,
+so "what could we do with ₱200 and what we own" works today on the 16 real activity
+rows and the resource picker's output. Home leads with it, because it is the button
+that works; "Plan something" is still there and still needs the catalogue. Details
+in `00-architecture.md` §8 under Phase 2 — including the line it must not cross,
+which is that Ideas answers *what* and never *where*.
+
+**This is the first thing worth a device run since the Phase 2 verification.**
+Check `/ideas` and `/dev/tokens` in dark mode at 1.3× font scale.
+
 Everything else passes: `flutter analyze` clean, 23 tests green, the migration
 applied, the SQL assertions (haversine, fare symmetry, past-midnight hours)
 verified against the live database, and the full flow driven on the S25 Ultra in

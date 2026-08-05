@@ -7,6 +7,7 @@ import '../features/auth/sign_in_screen.dart';
 import '../features/auth/sign_up_screen.dart';
 import '../features/dev/token_gallery_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/ideas/ideas_screen.dart';
 import '../features/onboarding/profile_setup_screen.dart';
 import '../features/onboarding/resource_picker_screen.dart';
 import '../features/plan_request/plan_request_screen.dart';
@@ -20,6 +21,7 @@ abstract final class Routes {
   static const onboardingProfile = '/onboarding/profile';
   static const onboardingResources = '/onboarding/resources';
   static const plan = '/plan';
+  static const ideas = '/ideas';
   static const devTokens = '/dev/tokens';
 }
 
@@ -132,6 +134,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.plan,
         builder: (context, state) => const PlanRequestScreen(),
+      ),
+      // Same gate as /plan: the resource picker has to have run before either
+      // screen can filter on what the user owns.
+      GoRoute(
+        path: Routes.ideas,
+        builder: (context, state) => const IdeasScreen(),
       ),
       GoRoute(
         path: Routes.devTokens,

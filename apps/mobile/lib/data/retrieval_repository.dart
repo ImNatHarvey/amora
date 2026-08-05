@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/activity.dart';
 import '../models/simple_plan.dart';
 import 'repository_exception.dart';
 import 'supabase_client_provider.dart';
@@ -46,6 +47,41 @@ class RetrievalRepository {
   /// `docs/00-architecture.md` §9. It becomes `plans.party_size` when friends
   /// and families arrive (§11).
   static const partySize = 2;
+
+  /// Activities the party can afford and already owns the gear for.
+  ///
+  /// The same `retrieve_activities` call `build_simple_plan` makes internally,
+  /// exposed on its own because it is the one half of retrieval that does not
+  /// need a single curated place to be useful. Activities carry no location by
+  /// design — the place supplies the where — so this answers "what could we
+  /// do" while the catalogue is still being built.
+  ///
+  /// [budgetPhpCents] is the whole party's budget, as everywhere else in the
+  /// app. Activity budgets are stored per person, so the division happens here
+  /// rather than in the user's head — and it matches what `build_simple_plan`
+  /// already does with the same number, so the two surfaces cannot disagree
+  /// about what ₱200 buys.
+  Future<List<Activity>> activitiesWithin({
+    required int budgetPhpCents,
+    required Set<String> ownedResourceIds,
+  }) {
+    return guard(
+      () async {
+        final rows = await _client.rpc<List<dynamic>>(
+          'retrieve_activities',
+          params: {
+            'p_budget_php_cents': budgetPhpCents ~/ partySize,
+            'p_owned_resource_ids': ownedResourceIds.toList(),
+          },
+        );
+
+        return rows
+            .map((row) => Activity.fromMap(row as Map<String, dynamic>))
+            .toList();
+      },
+      fallback: 'Could not load ideas.',
+    );
+  }
 
   /// Builds a plan. One round trip: the server retrieves, composes and costs.
   ///
