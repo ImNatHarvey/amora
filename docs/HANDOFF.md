@@ -37,6 +37,35 @@ which is that Ideas answers *what* and never *where*.
 **This is the first thing worth a device run since the Phase 2 verification.**
 Check `/ideas` and `/dev/tokens` in dark mode at 1.3× font scale.
 
+## Phase 3 — built, needs one secret
+
+Everything except the model call is deployed and verified: four tables with RLS,
+`cost_generated_plan`, the `generate-plan` Edge Function, the Dart repository and
+models, and a "Generate with AI" button beside the Phase 2 builder on identical
+input.
+
+**Outstanding: `GEMINI_API_KEY`.** Free, two minutes, `aistudio.google.com/apikey`,
+then `npx supabase secrets set GEMINI_API_KEY=... --project-ref eyeipcislyrsxnogyxas`.
+Until it is set, the function answers 503 with exactly that instruction —
+confirmed against the live endpoint, not assumed.
+
+`GEMINI_MODEL` is also a secret, defaulting to `gemini-2.5-flash`. **If the first
+call returns 404, set that secret rather than editing the function** — the error
+message says so too. Model names move faster than deploys and D8 makes the model a
+config choice.
+
+Gotchas found building it, worth not rediscovering:
+
+- **`cost_generated_plan` first omitted `slug` from each stop**, which
+  `Place.fromMap` requires. It would have thrown on the first generated plan —
+  and only once a key existed, which is the worst time to find it. Fixed in
+  `20260805052510`. **Both composers must return the same stop shape**, field for
+  field; that is what lets one Flutter model render either.
+- **`plan_cache` has RLS on with zero policies**, which is how Postgres spells
+  "service role only". It is not a mistake and does not need a policy added.
+- **Rejection logging goes to the Edge Function console**, prefixed
+  `PLAN_REJECTED`. Free-tier retention is short — copy anything worth keeping.
+
 Everything else passes: `flutter analyze` clean, 23 tests green, the migration
 applied, the SQL assertions (haversine, fare symmetry, past-midnight hours)
 verified against the live database, and the full flow driven on the S25 Ultra in

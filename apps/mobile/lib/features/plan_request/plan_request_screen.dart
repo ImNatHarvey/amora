@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../models/plan.dart';
 import '../../models/simple_plan.dart';
 import '../../theme/app_tokens.dart';
 import '../../util/manila_time.dart';
@@ -63,21 +64,48 @@ class _PlanRequestScreenState extends ConsumerState<PlanRequestScreen> {
     });
   }
 
-  void _submit() {
-    if (!_formKey.currentState!.validate()) return;
+  /// Reads the form, or null when it is not usable yet.
+  ///
+  /// Both buttons need exactly the same three values, so parsing them once
+  /// keeps the crude builder and the model on identical input — which is the
+  /// only way comparing their output means anything.
+  ({int budgetPhpCents, DateTime plannedForUtc, OriginArea origin})? _request() {
+    if (!_formKey.currentState!.validate()) return null;
 
     final origin = _origin;
-    if (origin == null) return;
+    if (origin == null) return null;
 
     // Pesos in the field, centavos on the wire. Money is never a double
     // (CLAUDE.md conventions), so the conversion happens here at the boundary
     // and nowhere else.
     final pesos = int.parse(_budgetController.text.trim());
 
+    return (
+      budgetPhpCents: pesos * 100,
+      plannedForUtc: manilaToUtc(_plannedForManila),
+      origin: origin,
+    );
+  }
+
+  void _submit() {
+    final request = _request();
+    if (request == null) return;
+
     ref.read(planControllerProvider.notifier).submit(
-          budgetPhpCents: pesos * 100,
-          plannedForUtc: manilaToUtc(_plannedForManila),
-          origin: origin,
+          budgetPhpCents: request.budgetPhpCents,
+          plannedForUtc: request.plannedForUtc,
+          origin: request.origin,
+        );
+  }
+
+  void _generate() {
+    final request = _request();
+    if (request == null) return;
+
+    ref.read(generationControllerProvider.notifier).generate(
+          budgetPhpCents: request.budgetPhpCents,
+          plannedForUtc: request.plannedForUtc,
+          origin: request.origin,
         );
   }
 
@@ -88,6 +116,7 @@ class _PlanRequestScreenState extends ConsumerState<PlanRequestScreen> {
 
     final areas = ref.watch(originAreasProvider);
     final result = ref.watch(planControllerProvider);
+    final generated = ref.watch(generationControllerProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Plan something')),
@@ -171,8 +200,40 @@ class _PlanRequestScreenState extends ConsumerState<PlanRequestScreen> {
                       )
                     : const Text('Build a plan'),
               ),
+              SizedBox(height: tokens.sm),
+              // Same three inputs, the other composer. Side by side on purpose:
+              // "did the model beat nearest-first" is the question Phase 3
+              // exists to answer, and it is only answerable if both are one tap
+              // apart on identical input.
+              OutlinedButton(
+                onPressed: generated.isLoading
+                    ? null
+                    : () {
+                        _origin ??= areas.valueOrNull?.firstOrNull;
+                        _generate();
+                      },
+                child: generated.isLoading
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Generate with AI'),
+              ),
               SizedBox(height: tokens.lg),
               const Divider(),
+              generated.when(
+                loading: () => const SizedBox.shrink(),
+                error: (error, _) => Padding(
+                  padding: EdgeInsets.only(top: tokens.md),
+                  child: _ErrorRetry(
+                    message: '$error',
+                    onRetry: () => ref.invalidate(generationControllerProvider),
+                  ),
+                ),
+                data: (timed) => timed == null
+                    ? const SizedBox.shrink()
+                    : _GeneratedView(timed: timed),
+              ),
               SizedBox(height: tokens.md),
               result.when(
                 loading: () => const Center(child: CircularProgressIndicator()),
@@ -317,6 +378,133 @@ class _PlanView extends StatelessWidget {
           Text(
             plan.candidateActivities.map((a) => a.title).join(' · '),
             style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The generated plans, rendered as plainly as the Phase 2 output beside them.
+///
+/// No cards, no colour, no motion — Phase 4 designs this. Styling it now would
+/// make a model's answer look better than the crude builder's for reasons that
+/// have nothing to do with the answer.
+class _GeneratedView extends StatelessWidget {
+  const _GeneratedView({required this.timed});
+
+  final TimedPlanSet timed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.tokens;
+    final set = timed.plans;
+
+    if (set.isEmpty) {
+      return Padding(
+        padding: EdgeInsets.only(top: tokens.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('The model found nothing.', style: theme.textTheme.titleMedium),
+            SizedBox(height: tokens.sm),
+            Text(
+              'Every plan it produced was rejected, or no place was open and '
+              'affordable to build one from.',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: tokens.md),
+        Text(
+          '${set.plans.length} generated '
+          '${set.plans.length == 1 ? 'plan' : 'plans'}',
+          style: theme.textTheme.titleMedium,
+        ),
+        SizedBox(height: tokens.xs),
+        Text(
+          // The cache state belongs beside the timing or the two readings look
+          // like one measurement contradicting itself. A hit skips retrieval
+          // and the model entirely.
+          '${set.cacheHit ? 'from cache' : set.generatedByModel ?? 'generated'}'
+          ' · ${timed.elapsed.inMilliseconds} ms',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        SizedBox(height: tokens.md),
+        for (final plan in set.plans) ...[
+          _GeneratedPlanBlock(plan: plan),
+          SizedBox(height: tokens.md),
+        ],
+      ],
+    );
+  }
+}
+
+class _GeneratedPlanBlock extends StatelessWidget {
+  const _GeneratedPlanBlock({required this.plan});
+
+  final GeneratedPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.tokens;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(plan.title, style: theme.textTheme.bodyLarge),
+        SizedBox(height: tokens.xs),
+        for (var i = 0; i < plan.stops.length; i += 1) ...[
+          if (i < plan.legs.length) _LegLine(leg: plan.legs[i]),
+          _StopLine(
+            stop: plan.stops[i],
+            plannedFor: toManila(plan.plannedForUtc),
+            partySize: plan.partySize,
+          ),
+          // The model's own sentence. Indented under its stop so it reads as
+          // commentary rather than as another retrieved fact.
+          if (plan.stops[i].note != null)
+            Padding(
+              padding: EdgeInsets.only(left: tokens.md, bottom: tokens.sm),
+              child: Text(
+                plan.stops[i].note!,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ),
+        ],
+        _TotalsBlock(totals: plan.totals),
+        if (plan.overBudget) ...[
+          SizedBox(height: tokens.xs),
+          // Colour and an icon, never colour alone (docs 02 §2). The server
+          // reports over budget rather than trimming stops to fit, so this is
+          // the honest answer being shown honestly.
+          Row(
+            children: [
+              Icon(
+                tokens.costOverBudgetIcon,
+                size: 18,
+                color: tokens.costOverBudget,
+              ),
+              SizedBox(width: tokens.xs),
+              Expanded(
+                child: Text(
+                  'Over your budget of '
+                  '${_pesos(plan.budgetPhpCents, zeroIsFree: false)}.',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: tokens.costOverBudget),
+                ),
+              ),
+            ],
           ),
         ],
       ],

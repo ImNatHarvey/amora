@@ -37,6 +37,10 @@ class PlanStop {
     required this.place,
     required this.distanceFromOriginM,
     required this.partyPricePhpCents,
+    this.activityId,
+    this.startTimeUtc,
+    this.durationMinutes,
+    this.note,
   });
 
   factory PlanStop.fromMap(Map<String, dynamic> map) => PlanStop(
@@ -44,6 +48,13 @@ class PlanStop {
         place: Place.fromMap(map),
         distanceFromOriginM: map['distance_m'] as int,
         partyPricePhpCents: map['party_price_php_cents'] as int,
+        activityId: map['activity_id'] as String?,
+        startTimeUtc: switch (map['start_time']) {
+          final String time => DateTime.tryParse(time)?.toUtc(),
+          _ => null,
+        },
+        durationMinutes: map['duration_minutes'] as int?,
+        note: map['note'] as String?,
       );
 
   final int seq;
@@ -59,6 +70,22 @@ class PlanStop {
   /// Straight-line from the plan's origin, not from the previous stop, and not
   /// road distance. [PlanLeg.distanceM] is the stop-to-stop figure.
   final int distanceFromOriginM;
+
+  // --- Set only by a generated plan (Phase 3) --------------------------------
+  // Phase 2's builder pairs nothing and schedules nothing — deciding which
+  // activity suits which place is the judgement call Gemini makes — so these
+  // are null there. They live on the shared type rather than a parallel one
+  // because both composers return the same stop shape from Postgres, which is
+  // what lets one screen render either.
+
+  /// The activity the model paired with this stop, if any.
+  final String? activityId;
+  final DateTime? startTimeUtc;
+  final int? durationMinutes;
+
+  /// The model's one sentence on why this stop. The only thing it authors, and
+  /// it carries no fact we did not give it (invariant 1).
+  final String? note;
 }
 
 /// The journey between two consecutive points on a plan.
