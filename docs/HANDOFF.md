@@ -79,6 +79,23 @@ Both were in Phase 3's own code, neither had symptoms yet:
 
 **The plan tables are deliberately writer-less** until Phase 4 — see §8. Not drift.
 
+**The cache key now has tests:** `npx deno test supabase/functions/generate-plan/`.
+Deno is not installed globally; `npx deno@latest` works and is what the command
+above resolves to. Nine cases, each written in **both directions** — a key
+function can fail by merging things it should separate (wrong answers) or by
+separating things it should merge (no caching at all, which the free tier cannot
+afford), and a suite checking only one direction passes trivially if you make
+every key unique.
+
+The regression test was checked against the *pre-fix* code and fails there,
+printing the two identical keys. A test that passes against both versions would
+have been worth nothing.
+
+`constraint_hash.ts` is a separate module for one reason: importing `index.ts`
+starts a server, which would make the part of this function most needing tests
+the hardest part to reach. The Edge Function imports from it, so there is one
+copy, not two.
+
 Gotchas found building it, worth not rediscovering:
 
 - **`cost_generated_plan` first omitted `slug` from each stop**, which
