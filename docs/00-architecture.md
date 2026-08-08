@@ -854,7 +854,7 @@ adversarial ones ("take me to Starbucks in Manila").
 > degrades to "ask with chips" rather than to a dead product, and the Phase 2
 > screen survives as the dev and test surface underneath.
 
-**Phase 4 — Plan experience — ⚠️ BUILT, ONE CRITERION DEFERRED**
+**Phase 4 — Plan experience — ⚠️ CODE COMPLETE, AWAITING DATA AND A DEVICE RUN**
 `flutter_map` with numbered stops, dashed walk legs, solid ride legs, per-leg fares,
 vertical timeline, cost breakdown, save. Tapping a stop opens place detail:
 `place_notes`, contact, social link, price range and hours. DIY activities show
@@ -862,14 +862,32 @@ their `tutorial_url` as an embedded player.
 *Accept:* generate, save, reopen, and read a plan while walking around; a stop's
 notes are readable from the plan; a DIY activity plays its tutorial in-app.
 
-> **The embedded tutorial player is deferred, deliberately.** Zero of the 16
-> activities has a `tutorial_url` — five are `is_diy` and none has a link — so
-> there is nothing to play, and it is the only slice needing
-> `youtube_player_iframe`, a webview. Adding a webview that can play nothing is
-> the `flutter_image_compress` mistake repeated. It ships when a URL exists;
-> collecting one is a field-checklist task, including the embed check.
+> **The embedded tutorial player shipped on 2026-08-08**, after the dependency
+> was checked rather than assumed. It had been deferred on the grounds that a
+> webview which can play nothing repeats the `flutter_image_compress` mistake —
+> a good reason to check first, not a permanent one.
 >
-> **Everything else is built with no new dependencies** — `flutter_map`,
+> **`webview_flutter_android` 4.13.0 has migrated to AGP Built-in Kotlin.** Its
+> `build.gradle.kts` applies only `com.android.library`, never
+> `org.jetbrains.kotlin.android`, and `flutter build apk --debug` succeeds. That
+> is the migration the Phase 6 note on `flutter_image_compress` says to check
+> for; the answer for this dependency is yes.
+>
+> **`tutorial_url` was unreachable, not empty.** The column existed from Phase 0
+> but `retrieve_activities` never selected it, so the feature could not have
+> been built at all without the migration that added it to the return table —
+> which requires a `drop`, since Postgres will not change a return type through
+> `create or replace`.
+>
+> **Widening retrieval is not widening the model's view.** `generate-plan`
+> builds its prompt from `activity_id | title | category`, so the new column
+> reaches the app and never the model. Invariant 1 is untouched.
+>
+> **The criterion is still unmet, on data.** All five `is_diy` rows have a null
+> `tutorial_url`, and D5 puts tutorial links among the facts that are collected
+> and watched rather than generated. One real URL closes it.
+>
+> **Everything else was built with no new dependencies** — `flutter_map`,
 > `latlong2` and `url_launcher` were already installed.
 >
 > **`save_plan` recomputes rather than stores.** It takes place ids, their order
@@ -894,13 +912,18 @@ notes are readable from the plan; a DIY activity plays its tutorial in-app.
 > and the field checklist collects it, but no phase displayed it — which quietly
 > undercut D2's claim to replace the Reddit tab. Surfacing it here closes that.
 >
-> **Embedding needs a dependency** (`youtube_player_iframe` over the older
-> `youtube_player_flutter`; it builds on the official `webview_flutter`). Check
-> the Kotlin Gradle Plugin situation before adding it — that is what got
-> `flutter_image_compress` removed at Phase 0. Keep an "open in YouTube" fallback
-> via `url_launcher`, already installed: it is the only thing that works when a
-> video is embed-disabled, which the field checklist now screens for at collection
-> time.
+> **Embedding took one dependency**, `youtube_player_iframe` 6.0.2 over the
+> older `youtube_player_flutter`, on the official `webview_flutter`. The Kotlin
+> Gradle Plugin check that this note demanded was run and passed — see the
+> close-out note above.
+>
+> **The "open in YouTube" fallback stays on screen even when the embed works.**
+> It is the only thing that plays an embed-disabled video, and that failure
+> happens *inside* the iframe: the player shows its own error and Flutter never
+> hears about it, so a fallback offered only on failure would never be offered.
+> The field checklist screens for embed-disabled videos at collection time,
+> which reduces how often this matters but cannot reach zero — an owner can
+> disable embedding after the link is collected.
 
 **Phase 5 — Editing**
 Reorder, remove, retime, add a custom stop. Legs and totals recompute. `plan_edits`

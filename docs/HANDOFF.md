@@ -2,15 +2,26 @@
 
 Context bridge for fresh sessions. Everything structural lives in
 `00-architecture.md` and `02-design-system.md` — this file is only what those
-don't say. Last updated for the Phase 2 commit.
+don't say. Last updated for the Phase 4 close-out commit.
 
 ## Where we are
 
-Phases 0 and 1 are complete and accepted on device. **Phase 2 is written, tested,
-applied, and verified on the phone — but NOT accepted.** One thing is left:
+Phases 0 and 1 are complete and accepted on device. **Phases 2, 3 and 4 are code
+complete and none of the three is accepted** — see the ledger below for exactly
+which criteria are outstanding and why. **Next is Phase 5 (editing)**, chosen
+over 3b because it is the only remaining phase fully acceptable with no Gemini
+key and no new data.
 
-**Acceptance needs real places.** The criterion is "real, currently-open places";
-all 15 rows are still `test-*`. See "Seed data" below. Nothing else blocks it.
+**All three are blocked on the same thing: real places.** The criterion is
+"real, currently-open places"; all 15 rows are still `test-*`. See "Seed data"
+below. Nothing else blocks Phase 2 at all.
+
+> **Nat decided on 2026-08-08 to build every remaining phase first and collect
+> the data at the end**, having been told the risk and asked again. Recorded so
+> it is not reopened as though it were an oversight. The argument against, for
+> whoever reads this later: the correction loop needs completed plans, a wrong
+> seed prevents completion, and "is a Bocaue Saturday any good" is the one
+> question no amount of code answers. The mitigation is the ledger.
 
 > **The way that debt gets paid changed on 2026-08-05.** It stood open on the
 > assumption that a row costs a journey, so the catalogue cost an expedition nobody
@@ -34,8 +45,34 @@ that works; "Plan something" is still there and still needs the catalogue. Detai
 in `00-architecture.md` §8 under Phase 2 — including the line it must not cross,
 which is that Ideas answers *what* and never *where*.
 
-**This is the first thing worth a device run since the Phase 2 verification.**
-Check `/ideas` and `/dev/tokens` in dark mode at 1.3× font scale.
+**A device run is owed.** Nothing since the Phase 2 verification has been seen on
+hardware — that now covers all of Phase 4's UI plus the DIY tutorial. Check
+`/ideas`, `/plan-request`, a saved plan and `/dev/tokens` in dark mode at 1.3×
+font scale. Three of the bugs this project has shipped were invisible to every
+widget test and obvious in the first ten seconds on the phone.
+
+## Deferred acceptance criteria — the ledger
+
+**Read this before declaring anything done.** On 2026-08-08 Nat chose to build
+every remaining phase before collecting seed data, so criteria will keep going
+unmet by decision rather than by oversight. The risk of that choice is not that
+any one item is forgotten; it is that nobody can say at the end *which* items
+were skipped. This table is the answer. **Add a row rather than quietly passing
+a phase.**
+
+| Phase | Criterion not yet met | Unblocked by |
+|---|---|---|
+| 0 | ≥8 places across ≥3 barangays; all 15 rows are `test-*` | `DESK-CHECKLIST.md` |
+| 2 | "real, currently-open places within 5 km", the ₱0 run and the ₱100–₱200 run | the same 8 places |
+| 3 | 20 generations with zero invalid IDs; cache hit | `GEMINI_API_KEY` |
+| 3 | every total matches an independent SQL recomputation | the key, **plus doing it by hand** — not via `cost_generated_plan` |
+| 4 | whether the *map* is useful | real coordinates; 15 invented ones draw a cluster and 72 m legs |
+| 4 | "a DIY activity plays its tutorial in-app" | one real `tutorial_url` — the **code is done**, see below |
+| 4 | on-device confirmation of the Phase 4 UI | Nat's phone was in use on 2026-08-08 |
+
+Two of these are one free API key and one evening of desk work. Neither gets
+easier by being left later, and both gate the only question that matters — is a
+Bocaue Saturday any good.
 
 ## Phase 3 — built, needs one secret
 
@@ -112,11 +149,12 @@ Gotchas found building it, worth not rediscovering:
   return, because keep-alive sockets are still open. Set `process.exitCode` and
   return instead. Cost twenty minutes in the acceptance harness.
 
-## Phase 4 — built, one criterion deferred
+## Phase 4 — code complete; acceptance waits on data
 
-Map, timeline, cost breakdown, save/reopen and place detail, with **no new
-dependencies** — `flutter_map` 8.3.1, `latlong2` and `url_launcher` were already
-in `pubspec.yaml`.
+Map, timeline, cost breakdown, save/reopen and place detail. The first commit
+added **no new dependencies** — `flutter_map` 8.3.1, `latlong2` and
+`url_launcher` were already in `pubspec.yaml`. The close-out commit added one,
+deliberately and after checking (below).
 
 **Routes moved.** `/plan` used to be the request screen; it is now `/plan-request`,
 because `/plan/:id` is a saved plan. Also `/plans` and `/place/:id`.
@@ -125,9 +163,59 @@ because `/plan/:id` is a saved plan. Also `/plans` and `/place/:id`.
 nothing displayed it, which quietly undercut D2's claim to replace the Reddit tab
 for four phases.
 
-**The embedded DIY player is deferred.** No activity has a `tutorial_url` — five
-are `is_diy`, none has a link — and it is the only slice needing a webview.
-Adding one that can play nothing repeats the `flutter_image_compress` mistake.
+### The DIY tutorial player — built 2026-08-08
+
+Deferred at first commit on the grounds that a webview that can play nothing
+repeats the `flutter_image_compress` mistake. Closed once the dependency was
+checked rather than assumed.
+
+**`youtube_player_iframe` 6.0.2 is safe to depend on.** It pulls
+`webview_flutter` 4.14.1 / `webview_flutter_android` 4.13.0, whose
+`android/build.gradle.kts` applies **only `com.android.library`** — it has
+migrated to AGP Built-in Kotlin and does *not* apply
+`org.jetbrains.kotlin.android`. That is exactly the migration the Phase 0 note
+told a future session to check for. **`flutter build apk --debug` succeeds**
+(270 s), which is the only check that actually settles it. KGP still sits on the
+plugin's `buildscript` classpath; it is vestigial and does not break the build.
+
+**`tutorial_url` was unreachable, not merely empty.** The column has existed
+since the Phase 0 schema, but `retrieve_activities` never selected it, so no
+caller could have rendered a link even if one existed. Migration
+`20260808152258` drops and recreates the function with the column added —
+**adding a column to a return table is not a `create or replace`**, Postgres
+refuses to change a return type, and the drop takes the grants with it so the
+`revoke`/`grant` pair must be reissued with the full argument list.
+
+Every existing caller was checked, not assumed:
+
+- `cost_generated_plan` selects `a.activity_id` only — unaffected.
+- `build_simple_plan` does `to_jsonb(a)`, so `candidate_activities` gained the
+  field. That reaches the same `Activity.fromMap` the Ideas screen uses, so one
+  model change served both surfaces.
+- **`generate-plan`'s prompt emits `activity_id | title | category` and nothing
+  else**, so the model's view did not widen. Worth stating plainly: widening
+  what *retrieval* returns is not widening what the *model* is told. Invariant 1
+  holds.
+
+**Three render states, not two.** `tutorialRenderFor(url)` in
+`lib/features/ideas/diy_tutorial.dart` returns `none` / `embed` / `linkOnly`,
+because "no embed" and "no tutorial" are different facts: collapsing them would
+either grow a dead button on the blank rows we ship today, or silently drop a
+Facebook video somebody collected. It is a **pure function, separate from the
+widget, for the same reason `constraint_hash.ts` is separate** — the embed path
+needs a platform webview that `flutter test` does not have, so a test that could
+only reach the rule through a widget could not reach it at all.
+
+**The external "Watch the tutorial" action stays even when the embed works.** An
+embed-disabled video fails *inside* the iframe, showing its error there; Flutter
+never sees it, so there is no way to swap to a fallback after the fact. It has
+to already be on screen.
+
+**What is left is one URL.** All five `is_diy` rows have `tutorial_url` null and
+that is the correct state — D5 names tutorial URLs among the facts that are
+collected and watched, never generated, because a recalled video id renders a
+dead player that looks exactly like a working one until it is tapped. Paste one
+into `activities.csv`, re-import, and the criterion is met.
 
 **Gotchas worth not rediscovering:**
 
@@ -196,7 +284,9 @@ dark mode at 1.3× font scale with zero render overflows.
 Measured on device: **202–340 ms** end to end including the Manila↔Tokyo round
 trip, against 11.9 ms of server execution. The 400 ms criterion has room.
 
-**Do not start Phase 3 until real data is in.**
+~~**Do not start Phase 3 until real data is in.**~~ **Overridden 2026-08-08** —
+Nat chose to build every remaining phase first. Struck rather than deleted,
+because it was the right call when written and the reasoning above it still is.
 
 ## Scope is settled — §12. Stop theorising, go collect data.
 
@@ -285,11 +375,9 @@ Roadmap changes that followed:
   on, the fallback when extraction fails, and the only way to test retrieval
   without a model in the loop.
 
-**Dependency flagged, not added:** embedding needs `youtube_player_iframe` (on
-official `webview_flutter`) at Phase 4. **Check the Kotlin Gradle Plugin first** —
-that is what got `flutter_image_compress` removed at Phase 0. Keep the
-`url_launcher` "open in YouTube" fallback; it is the only thing that works for an
-embed-disabled video, which the field checklist now screens for at collection.
+**Dependency flagged, then added 2026-08-08** — `youtube_player_iframe` 6.0.2.
+The Kotlin Gradle Plugin check this line demanded was run and passed; the
+`url_launcher` fallback was kept. See "The DIY tutorial player" above.
 
 ### What the device run caught
 
@@ -390,11 +478,32 @@ waiting on the phone screen — unlock it and accept.
   tutorial URLs from model knowledge. Ever. The curated database is the whole
   business (D3). Blank templates and obviously-fake `EXAMPLE` rows are fine;
   plausible-looking invented rows are not.
-- **Claude does not commit or push by default** — print the commit messages as
-  copyable blocks and Nat applies them in VS Code. (He sometimes authorises it
-  explicitly in-session; absent that, print and stop.)
+- **Claude commits and pushes.** Standing authority, granted 2026-08-08. One
+  clean commit per phase on a branch off `master`, pushed, SHA reported. This
+  **reverses** the previous rule ("print the messages and stop"); it is written
+  here rather than argued again.
 - Commits carry no Claude attribution — `.claude/settings.json` sets
   `includeCoAuthoredBy: false`.
+
+## The working loop, from 2026-08-08
+
+Agreed with Nat and now the standing shape of a session:
+
+1. **Plan the phase**, get approval, build it.
+2. **Review the whole codebase** — not just the diff. `flutter analyze`,
+   `flutter test`, `npx deno@latest test supabase/functions/generate-plan/`, and
+   Supabase `get_advisors` for both `security` and `performance`.
+3. **Fix what that finds**, in the same commit.
+4. **Update the docs in the same commit**, never after — `HANDOFF.md` and any
+   `00-architecture.md` phase entry the work changed.
+5. **Commit and push.** Then **stop** and plan the next phase.
+
+**Known-permanent advisor noise, so a future session does not chase it:**
+`plan_cache` RLS-with-no-policies (that *is* "service role only"), leaked-password
+protection (Pro-only, D7), and five `unused_index` INFO notices. The indexes are
+not dead — `plans` and `plan_items` have **zero rows**, and Postgres will not
+choose an index on a 15-row table, so "never used" measures the dataset, not the
+schema. Re-check once real data and real traffic exist.
 
 ## Seed data — placeholders, must be replaced
 
