@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/data/resources_repository.dart';
 import 'package:mobile/data/retrieval_repository.dart';
+import 'package:mobile/features/ideas/diy_tutorial.dart';
 import 'package:mobile/features/ideas/ideas_screen.dart';
 import 'package:mobile/models/activity.dart';
 import 'package:mobile/theme/app_theme.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import 'fakes.dart';
 
@@ -28,6 +30,22 @@ const _paid = Activity(
   maxBudgetPhpCents: 50000,
   durationMinutes: 90,
   isDiy: true,
+);
+
+/// A DIY activity whose link is not a YouTube video. Deliberately not a YouTube
+/// URL: the embed path builds a platform webview, which `flutter test` has no
+/// implementation for, so the link-only branch is the one a widget test can
+/// actually reach. The embed branch is covered by `tutorialRenderFor` below and
+/// verified for real on device.
+const _paidWithLink = Activity(
+  id: 'a3',
+  slug: 'scrapbook-making',
+  title: 'Scrapbook making',
+  category: 'diy',
+  minBudgetPhpCents: 10000,
+  durationMinutes: 60,
+  isDiy: true,
+  tutorialUrl: 'https://example.com/how-to-scrapbook',
 );
 
 Future<FakeRetrievalRepository> _pump(
@@ -129,5 +147,75 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(retrieval.activityBudgetsPhpCents, contains(50 * 100 ~/ 2));
+  });
+
+  // --- DIY tutorials -------------------------------------------------------
+  //
+  // `tutorial_url` is null on all five DIY rows in the database, so the case
+  // that actually ships is the one where nothing renders. Testing only the
+  // happy path here would leave the shipping path uncovered.
+
+  testWidgets('a DIY activity with no tutorial renders no tutorial',
+      (tester) async {
+    await _pump(tester, activities: const [_paid]);
+
+    expect(find.text('Cook a meal together'), findsOneWidget);
+    // An absent row, never a blank label — the rule place detail already
+    // follows for a missing phone number.
+    expect(find.text('Watch the tutorial'), findsNothing);
+    expect(find.byType(YoutubePlayer), findsNothing);
+  });
+
+  testWidgets('a non-embeddable tutorial still offers to open externally',
+      (tester) async {
+    await _pump(tester, activities: const [_paidWithLink]);
+
+    expect(find.text('Watch the tutorial'), findsOneWidget);
+    expect(find.byType(YoutubePlayer), findsNothing);
+  });
+
+  testWidgets('a non-DIY activity never shows a tutorial', (tester) async {
+    await _pump(tester, activities: const [_free]);
+
+    expect(find.text('Watch the tutorial'), findsNothing);
+  });
+
+  group('tutorialRenderFor', () {
+    test('nothing collected renders nothing', () {
+      expect(tutorialRenderFor(null), TutorialRender.none);
+      expect(tutorialRenderFor(''), TutorialRender.none);
+      // The CSV importer writes an empty cell as an empty string, not null, so
+      // whitespace has to land in the same bucket or the blank rows we ship
+      // today would each grow a dead button.
+      expect(tutorialRenderFor('   '), TutorialRender.none);
+    });
+
+    test('the YouTube URL shapes a person actually pastes all embed', () {
+      for (final url in const [
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://m.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://youtu.be/dQw4w9WgXcQ',
+        'https://www.youtube.com/shorts/dQw4w9WgXcQ',
+        'https://www.youtube.com/embed/dQw4w9WgXcQ',
+      ]) {
+        expect(tutorialRenderFor(url), TutorialRender.embed, reason: url);
+      }
+    });
+
+    test('anything else is a link, not a failure', () {
+      // Both directions matter. A Facebook video is the likeliest non-YouTube
+      // tutorial in Bocaue and must still be openable; classifying it as `none`
+      // would silently drop a link somebody collected.
+      expect(
+        tutorialRenderFor('https://www.facebook.com/watch/?v=12345'),
+        TutorialRender.linkOnly,
+      );
+      expect(
+        tutorialRenderFor('https://vimeo.com/123456789'),
+        TutorialRender.linkOnly,
+      );
+      expect(tutorialRenderFor('not a url at all'), TutorialRender.linkOnly);
+    });
   });
 }

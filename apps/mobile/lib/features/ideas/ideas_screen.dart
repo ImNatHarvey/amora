@@ -7,6 +7,7 @@ import '../../models/activity.dart';
 import '../../theme/app_tokens.dart';
 import '../../ui/error_retry.dart';
 import '../../util/format.dart';
+import 'diy_tutorial.dart';
 import 'ideas_providers.dart';
 
 /// "What could we do?" — the half of retrieval that needs no curated place.
@@ -194,6 +195,11 @@ class _IdeaTile extends StatelessWidget {
                   : theme.colorScheme.onSurfaceVariant,
             ),
           ),
+
+          // Only a DIY activity has anything to teach, and only some of those
+          // have a link. Renders nothing in both of the other cases — which is
+          // every row today.
+          if (activity.isDiy) DiyTutorial(tutorialUrl: activity.tutorialUrl),
         ],
       ),
     );

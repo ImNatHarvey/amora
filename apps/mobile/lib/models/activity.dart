@@ -14,6 +14,7 @@ class Activity {
     this.durationMinutes,
     this.weatherDependent = false,
     this.isDiy = false,
+    this.tutorialUrl,
   });
 
   factory Activity.fromMap(Map<String, dynamic> map) {
@@ -29,6 +30,7 @@ class Activity {
       durationMinutes: map['duration_minutes'] as int?,
       weatherDependent: map['weather_dependent'] as bool? ?? false,
       isDiy: map['is_diy'] as bool? ?? false,
+      tutorialUrl: map['tutorial_url'] as String?,
     );
   }
 
@@ -47,4 +49,13 @@ class Activity {
   /// what retrieval returned.
   final bool weatherDependent;
   final bool isDiy;
+
+  /// One hand-picked video for a DIY activity, or null.
+  ///
+  /// Null on every row today and that is the normal case, not a gap to fill in
+  /// with something plausible: D5 names tutorial URLs among the facts the model
+  /// may never generate, because a recalled video id renders a dead player and
+  /// looks exactly like a working one until it is tapped. A link is collected
+  /// and watched, or it is absent.
+  final String? tutorialUrl;
 }
