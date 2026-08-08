@@ -158,10 +158,19 @@ class FakeRetrievalRepository implements RetrievalRepository {
   /// Deliberately wider than [areas], mirroring the real split: `known_areas`
   /// includes barangays that have fares but no curated places, and a fake that
   /// returned the same list either way would hide a screen using the wrong one.
-  List<String> known = const ['Bunlo', 'Duhat', 'Poblacion', 'Turo', 'Wakas'];
+  ///
+  /// `Wakas` deliberately has no fares, so the "this leg will be unpriced"
+  /// warning has something to fire on.
+  List<KnownArea> known = const [
+    KnownArea(area: 'Bunlo', hasPlaces: true, hasFares: true),
+    KnownArea(area: 'Duhat', hasPlaces: false, hasFares: true),
+    KnownArea(area: 'Poblacion', hasPlaces: true, hasFares: true),
+    KnownArea(area: 'Turo', hasPlaces: true, hasFares: true),
+    KnownArea(area: 'Wakas', hasPlaces: false, hasFares: false),
+  ];
 
   @override
-  Future<List<String>> knownAreas(String city) async => known;
+  Future<List<KnownArea>> knownAreas(String city) async => known;
 
   @override
   Future<SimplePlan> buildSimplePlan({
@@ -213,8 +222,18 @@ class FakePlansRepository implements PlansRepository {
   final Object? error;
 
   /// Every edit, in call order.
-  final List<({PlanEditType type, List<String> placeIds, String? target})>
-      edits = [];
+  ///
+  /// [stops] carries the whole payload, not just the ids, because the thing
+  /// most likely to be lost silently is a field nobody asserts on — the model's
+  /// note and its activity pairing survive an edit only because `_stopPayload`
+  /// copies them forward.
+  final List<
+      ({
+        PlanEditType type,
+        List<String> placeIds,
+        List<Map<String, dynamic>> stops,
+        String? target,
+      })> edits = [];
 
   final List<Map<String, dynamic>> addedPlaces = [];
 
@@ -231,6 +250,7 @@ class FakePlansRepository implements PlansRepository {
     edits.add((
       type: type,
       placeIds: [for (final s in stops) s['place_id'] as String],
+      stops: stops,
       target: targetPlaceId,
     ));
     if (error != null) throw error!;

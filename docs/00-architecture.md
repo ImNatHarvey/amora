@@ -985,6 +985,26 @@ user-added place does not appear in another account's generated plans.
 > Editing is always live, so a mistapped ✕ has no "Done" to reconsider before.
 > `edit_plan` taking a whole stop list makes undo an ordinary edit rather than a
 > rollback path.
+>
+> **Retime was finished one session later than the rest, and the reason is
+> worth keeping.** The first Phase 5 commit shipped reorder, remove and add;
+> `edit_plan` accepted `retime` and was verified in SQL, but **no Flutter
+> affordance ever called it**. It looked complete from the database and from the
+> test suite, because both exercised a path no user could reach. When a phase
+> lists capabilities, check each against a UI affordance rather than against a
+> function signature.
+>
+> **The Manila→UTC conversion is the only real hazard in the retime UI.**
+> `showTimePicker` yields a wall clock, `plan_items.start_time` stores an
+> instant, and combining them without `manilaToUtc` moves every retimed stop
+> eight hours while the plan still renders plausibly — an evening silently
+> becomes a morning. Verified on the live database: 19:30 Manila stored as
+> `11:30Z`, with order and every fare unchanged.
+>
+> **A review pass then found `save_plan` and `edit_plan` resolving the plan's
+> city differently**, which would have made every plan belonging to a user
+> outside Bocaue permanently uneditable on the day coverage expands. One
+> `plan_city()` now.
 
 **Phase 6 — Completion & actuals**
 Mark complete. Photo (compressed to ~150 KB), caption, actual spend, actual fare,

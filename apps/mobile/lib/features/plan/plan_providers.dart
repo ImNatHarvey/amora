@@ -44,9 +44,17 @@ class PlanEditor extends FamilyAsyncNotifier<SavedPlan?, String> {
           },
       ];
 
-  Future<void> _apply(
+  /// The one place an edit is sent and the result taken up.
+  ///
+  /// Takes the payload rather than `List<PlanStop>` so that adding a place —
+  /// which has an id and no stop to build from — goes through here too. It had
+  /// its own copy of this body until the Phase 5 review: the same
+  /// loading-with-previous, guard and invalidate, duplicated. That is the shape
+  /// behind both bugs this repo has already shipped (party size in two files,
+  /// `_pesos` in two screens), and worth removing before a third.
+  Future<void> _send(
     PlanEditType type,
-    List<PlanStop> stops, {
+    List<Map<String, dynamic>> stops, {
     String? targetPlaceId,
   }) async {
     final planId = arg;
@@ -59,7 +67,7 @@ class PlanEditor extends FamilyAsyncNotifier<SavedPlan?, String> {
       return await ref.read(plansRepositoryProvider).edit(
             planId: planId,
             type: type,
-            stops: _stopPayload(stops),
+            stops: stops,
             targetPlaceId: targetPlaceId,
           );
     });
@@ -67,6 +75,13 @@ class PlanEditor extends FamilyAsyncNotifier<SavedPlan?, String> {
     // Totals feed the list screen's summary.
     if (state.hasValue) ref.invalidate(savedPlansProvider);
   }
+
+  Future<void> _apply(
+    PlanEditType type,
+    List<PlanStop> stops, {
+    String? targetPlaceId,
+  }) =>
+      _send(type, _stopPayload(stops), targetPlaceId: targetPlaceId);
 
   Future<void> reorder(int oldIndex, int newIndex) async {
     final stops = [...?state.valueOrNull?.plan.stops];
@@ -99,23 +114,43 @@ class PlanEditor extends FamilyAsyncNotifier<SavedPlan?, String> {
     await _apply(PlanEditType.add, stops, targetPlaceId: stop.place.id);
   }
 
+  /// Changes when one stop starts and how long it lasts, and nothing else.
+  ///
+  /// Both values are nullable and null is meaningful: it clears the timing
+  /// rather than leaving it alone. Somebody who does not know how long they
+  /// will stay has to be able to say so.
+  ///
+  /// The order is untouched, so `write_plan_stops` recomputes identical legs
+  /// and every fare comes back unchanged. Retiming must not move anything.
+  Future<void> retime(
+    PlanStop stop, {
+    required DateTime? startTimeUtc,
+    required int? durationMinutes,
+  }) async {
+    final stops = [...?state.valueOrNull?.plan.stops];
+    if (stops.isEmpty) return;
+
+    final payload = _stopPayload(stops);
+    final index = stops.indexWhere((s) => s.place.id == stop.place.id);
+    if (index < 0) return;
+
+    // Rebuilt rather than mutated in place, so a null genuinely removes the key
+    // instead of leaving the previous value behind.
+    payload[index] = {
+      'place_id': stop.place.id,
+      if (stop.activityId != null) 'activity_id': stop.activityId,
+      if (startTimeUtc != null) 'start_time': startTimeUtc.toIso8601String(),
+      if (durationMinutes != null) 'duration_minutes': '$durationMinutes',
+      if (stop.note != null) 'note': stop.note,
+    };
+
+    await _send(PlanEditType.retime, payload, targetPlaceId: stop.place.id);
+  }
+
   Future<void> addPlace(String placeId) async {
     final stops = [...?state.valueOrNull?.plan.stops];
     final payload = _stopPayload(stops)..add({'place_id': placeId});
-    final planId = arg;
-    final previous = state;
-    state = const AsyncValue<SavedPlan?>.loading().copyWithPrevious(previous);
-
-    state = await AsyncValue.guard(() async {
-      return await ref.read(plansRepositoryProvider).edit(
-            planId: planId,
-            type: PlanEditType.add,
-            stops: payload,
-            targetPlaceId: placeId,
-          );
-    });
-
-    if (state.hasValue) ref.invalidate(savedPlansProvider);
+    await _send(PlanEditType.add, payload, targetPlaceId: placeId);
   }
 }
 

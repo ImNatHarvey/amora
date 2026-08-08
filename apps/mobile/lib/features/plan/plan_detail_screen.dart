@@ -11,6 +11,7 @@ import '../../util/manila_time.dart';
 import 'plan_map.dart';
 import 'plan_providers.dart';
 import 'plan_timeline.dart';
+import 'retime_sheet.dart';
 
 /// A saved plan: map, timeline, cost.
 ///
@@ -21,6 +22,32 @@ class PlanDetailScreen extends ConsumerWidget {
   const PlanDetailScreen({required this.planId, super.key});
 
   final String planId;
+
+  /// Asks when a stop starts, then writes it.
+  ///
+  /// A dismissed sheet returns null and must change nothing — distinct from a
+  /// record whose fields are null, which is the user clearing a time they had
+  /// set. Collapsing the two would make "cancel" quietly erase a timing.
+  Future<void> _retime(
+    BuildContext context,
+    WidgetRef ref,
+    PlanStop stop,
+    SimplePlan plan,
+  ) async {
+    final editor = ref.read(savedPlanProvider(planId).notifier);
+    final choice = await showRetimeSheet(
+      context: context,
+      stop: stop,
+      planDateUtc: plan.plannedForUtc,
+    );
+    if (choice == null) return;
+
+    await editor.retime(
+      stop,
+      startTimeUtc: choice.startTimeUtc,
+      durationMinutes: choice.durationMinutes,
+    );
+  }
 
   /// Removes a stop, and offers to put it back.
   ///
@@ -126,6 +153,7 @@ class PlanDetailScreen extends ConsumerWidget {
                       .read(savedPlanProvider(planId).notifier)
                       .reorder(oldIndex, newIndex),
                   onRemove: (stop) => _removeWithUndo(context, ref, stop, plan),
+                  onRetime: (stop) => _retime(context, ref, stop, plan),
                 ),
                 SizedBox(height: tokens.sm),
                 OutlinedButton.icon(

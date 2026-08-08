@@ -38,6 +38,24 @@ String pesos(int cents, {bool zeroIsFree = true}) {
 String distance(int metres) =>
     metres < 1000 ? '$metres m' : '${(metres / 1000).toStringAsFixed(1)} km';
 
+/// `7:00 PM` — a Manila wall-clock time, for a person rather than a log.
+///
+/// [manilaLocal] must already be Manila local, which is what `toManila`
+/// returns. This does no conversion of its own: a formatter that also shifted
+/// timezones would be two rules in one function, and the one it would hide is
+/// the one worth eight hours of confusion.
+///
+/// Separate from `formatManila`, which prints the date too and describes itself
+/// as debugging-grade. That is right for a plan's heading and wrong on a stop,
+/// where the date is already stated once above and repeating it per row buries
+/// the only part that differs.
+String formatManilaTime(DateTime manilaLocal) {
+  final hour24 = manilaLocal.hour;
+  final hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12;
+  final minute = manilaLocal.minute.toString().padLeft(2, '0');
+  return '$hour12:$minute ${hour24 < 12 ? 'AM' : 'PM'}';
+}
+
 /// `45 min`, `2h`, or `1h 30m`.
 String duration(int minutes) {
   if (minutes < 60) return '$minutes min';

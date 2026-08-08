@@ -6,6 +6,7 @@ import 'package:mobile/features/plan/plan_providers.dart';
 import 'package:mobile/features/plan/plan_timeline.dart';
 import 'package:mobile/models/saved_plan.dart';
 import 'package:mobile/theme/app_theme.dart';
+import 'package:mobile/util/manila_time.dart';
 
 import 'fakes.dart';
 
@@ -17,7 +18,16 @@ import 'fakes.dart';
 /// *stop list the screen sends* — which is the only input the client controls,
 /// and the only place a client-side bug can change the answer.
 
-Map<String, dynamic> _stop(String id, String name, int seq) => {
+Map<String, dynamic> _stop(
+  String id,
+  String name,
+  int seq, {
+  String? note,
+  String? activityId,
+  String? startTime,
+  int? durationMinutes,
+}) =>
+    {
       'seq': seq,
       'place_id': id,
       'slug': 'test-$id',
@@ -31,6 +41,10 @@ Map<String, dynamic> _stop(String id, String name, int seq) => {
       'price_max_php_cents': 20000,
       'party_price_php_cents': 20000,
       'distance_m': 100 * seq,
+      'note': note,
+      'activity_id': activityId,
+      'start_time': startTime,
+      'duration_minutes': durationMinutes,
     };
 
 const _names = {'p1': 'First', 'p2': 'Second', 'p3': 'Third'};
@@ -158,6 +172,115 @@ void main() {
     });
   });
 
+  test('an edit carries the model\'s note and activity pairing forward',
+      () async {
+    // The single highest-value assertion in this file. `note` and `activity_id`
+    // are the only things the model authors (invariant 1 forbids it authoring
+    // anything else), and they survive an edit only because _stopPayload copies
+    // them. If that regressed, every reorder would silently strip them: the
+    // plan would still render, still cost correctly, and quietly be worth less.
+    // Nothing else here would fail.
+    final repo = FakePlansRepository(
+      plan: SavedPlan.fromMap({
+        ..._payload(),
+        'stops': [
+          _stop('p1', 'First', 1,
+              note: 'Quiet enough to talk.', activityId: 'act-1'),
+          _stop('p2', 'Second', 2),
+        ],
+      }),
+    );
+    final editor = await _editor(repo);
+
+    await editor.reorder(0, 1);
+
+    final moved = repo.edits.single.stops
+        .firstWhere((s) => s['place_id'] == 'p1');
+    expect(moved['note'], 'Quiet enough to talk.');
+    expect(moved['activity_id'], 'act-1');
+  });
+
+  group('retime', () {
+    // The plan is 2026-08-08T10:00Z, which is 18:00 Manila the same day.
+    final planned = DateTime.utc(2026, 8, 8, 10);
+
+    test('a Manila wall-clock time is stored as the right UTC instant',
+        () async {
+      // The eight-hour bug, asserted by arithmetic rather than by eye. Skipping
+      // manilaToUtc turns an evening into a morning and the plan still renders
+      // perfectly plausibly, so nothing but a number catches it.
+      final repo = FakePlansRepository(plan: SavedPlan.fromMap(_payload()));
+      final editor = await _editor(repo);
+      final stop = SavedPlan.fromMap(_payload()).plan.stops[1];
+
+      // 19:30 Manila on the plan's day.
+      final manila = toManila(planned);
+      final startUtc = manilaToUtc(
+        DateTime(manila.year, manila.month, manila.day, 19, 30),
+      );
+
+      await editor.retime(stop, startTimeUtc: startUtc, durationMinutes: 90);
+
+      final sent =
+          repo.edits.single.stops.firstWhere((s) => s['place_id'] == 'p2');
+      // 19:30 Manila is 11:30 UTC the same day.
+      expect(sent['start_time'], DateTime.utc(2026, 8, 8, 11, 30).toIso8601String());
+      expect(sent['duration_minutes'], '90');
+      expect(repo.edits.single.type, PlanEditType.retime);
+    });
+
+    test('retiming touches one stop and moves nothing', () async {
+      // Order is what determines every distance and fare. A retime that
+      // reordered would change the total while claiming to change a clock.
+      final repo = FakePlansRepository(plan: SavedPlan.fromMap(_payload()));
+      final editor = await _editor(repo);
+      final stop = SavedPlan.fromMap(_payload()).plan.stops[1];
+
+      await editor.retime(
+        stop,
+        startTimeUtc: DateTime.utc(2026, 8, 8, 11, 30),
+        durationMinutes: 60,
+      );
+
+      expect(repo.edits.single.placeIds, ['p1', 'p2', 'p3']);
+      // The untouched stops carry no timing keys at all.
+      final other =
+          repo.edits.single.stops.firstWhere((s) => s['place_id'] == 'p1');
+      expect(other.containsKey('start_time'), isFalse);
+    });
+
+    test('clearing a time removes the key rather than sending null', () async {
+      // Somebody who does not know how long they will stay must be able to say
+      // so. write_plan_stops reads `->> 'duration_minutes'`, so an absent key
+      // and a null both land as NULL — but sending the old value back because
+      // the map was mutated rather than rebuilt would silently refuse the
+      // clear.
+      final repo = FakePlansRepository(
+        plan: SavedPlan.fromMap({
+          ..._payload(),
+          'stops': [
+            _stop('p1', 'First', 1,
+                startTime: '2026-08-08T11:30:00.000Z', durationMinutes: 60),
+          ],
+        }),
+      );
+      final editor = await _editor(repo);
+      final stop = SavedPlan.fromMap({
+        ..._payload(),
+        'stops': [
+          _stop('p1', 'First', 1,
+              startTime: '2026-08-08T11:30:00.000Z', durationMinutes: 60),
+        ],
+      }).plan.stops.first;
+
+      await editor.retime(stop, startTimeUtc: null, durationMinutes: null);
+
+      final sent = repo.edits.single.stops.single;
+      expect(sent.containsKey('start_time'), isFalse);
+      expect(sent.containsKey('duration_minutes'), isFalse);
+    });
+  });
+
   testWidgets('a read-only timeline offers no way to edit', (tester) async {
     // The request screen renders the same widget. If handles or ✕ buttons
     // leaked into it, a plan that has not been saved would appear editable and
@@ -187,6 +310,7 @@ void main() {
               plan: SavedPlan.fromMap(_payload()).plan,
               onReorder: (_, _) {},
               onRemove: (_) {},
+              onRetime: (_) {},
             ),
           ),
         ),
@@ -195,5 +319,6 @@ void main() {
 
     expect(find.byIcon(Icons.drag_handle), findsNWidgets(3));
     expect(find.byIcon(Icons.close), findsNWidgets(3));
+    expect(find.byIcon(Icons.schedule), findsNWidgets(3));
   });
 }
