@@ -9,6 +9,7 @@ import '../features/dev/token_gallery_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/ideas/ideas_screen.dart';
 import '../features/place/place_detail_screen.dart';
+import '../features/plan/add_stop_screen.dart';
 import '../features/plan/plan_detail_screen.dart';
 import '../features/plan/saved_plans_screen.dart';
 import '../features/onboarding/profile_setup_screen.dart';
@@ -159,6 +160,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '${Routes.plan}/:id',
         builder: (context, state) =>
             PlanDetailScreen(planId: state.pathParameters['id']!),
+        routes: [
+          // Nested, so the plan id is in the path rather than carried in
+          // state — the screen has to know which plan it is adding to, and a
+          // deep link that lost it would be a dead end.
+          GoRoute(
+            path: 'add-stop',
+            builder: (context, state) =>
+                AddStopScreen(planId: state.pathParameters['id']!),
+          ),
+        ],
       ),
       GoRoute(
         path: '${Routes.place}/:id',

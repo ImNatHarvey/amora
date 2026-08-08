@@ -17,6 +17,8 @@ class PlanTimeline extends StatelessWidget {
   const PlanTimeline({
     required this.plan,
     this.onStopTap,
+    this.onReorder,
+    this.onRemove,
     super.key,
   });
 
@@ -24,6 +26,14 @@ class PlanTimeline extends StatelessWidget {
 
   /// Opens place detail. Null in contexts where there is nowhere to go.
   final void Function(PlanStop stop)? onStopTap;
+
+  /// Supplied only where the plan is editable. When both this and [onRemove]
+  /// are null the timeline renders exactly as it did before Phase 5, which is
+  /// what keeps the read-only copy on the request screen untouched.
+  final void Function(int oldIndex, int newIndex)? onReorder;
+  final void Function(PlanStop stop)? onRemove;
+
+  bool get _editable => onReorder != null || onRemove != null;
 
   @override
   Widget build(BuildContext context) {
@@ -34,19 +44,115 @@ class PlanTimeline extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (var i = 0; i < plan.stops.length; i += 1) ...[
-          if (i < plan.legs.length) LegLine(leg: plan.legs[i]),
-          StopTile(
-            stop: plan.stops[i],
+        if (_editable)
+          _ReorderableStops(
+            plan: plan,
             plannedFor: plannedFor,
-            partySize: plan.partySize,
-            onTap: onStopTap == null ? null : () => onStopTap!(plan.stops[i]),
-          ),
-        ],
+            onStopTap: onStopTap,
+            onReorder: onReorder,
+            onRemove: onRemove,
+          )
+        else
+          for (var i = 0; i < plan.stops.length; i += 1) ...[
+            if (i < plan.legs.length) LegLine(leg: plan.legs[i]),
+            StopTile(
+              stop: plan.stops[i],
+              plannedFor: plannedFor,
+              partySize: plan.partySize,
+              onTap: onStopTap == null ? null : () => onStopTap!(plan.stops[i]),
+            ),
+          ],
         SizedBox(height: tokens.md),
         const Divider(),
         TotalsBlock(totals: plan.totals),
       ],
+    );
+  }
+}
+
+/// The stops, draggable.
+///
+/// Each row carries the leg *into* its stop, which is how `plan_legs` is shaped
+/// — `legs[i]` arrives at `stops[i]`. While a row is mid-drag the leg travelling
+/// with it is briefly wrong, and that is accepted rather than worked around:
+/// the server recomputes every leg on drop and the whole timeline redraws from
+/// the response, so the only alternative would be predicting fares on the
+/// device, which is invariant 3.
+class _ReorderableStops extends StatelessWidget {
+  const _ReorderableStops({
+    required this.plan,
+    required this.plannedFor,
+    this.onStopTap,
+    this.onReorder,
+    this.onRemove,
+  });
+
+  final SimplePlan plan;
+  final DateTime plannedFor;
+  final void Function(PlanStop stop)? onStopTap;
+  final void Function(int oldIndex, int newIndex)? onReorder;
+  final void Function(PlanStop stop)? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.tokens;
+
+    return ReorderableListView.builder(
+      // It lives inside the detail screen's ListView, so it must not scroll or
+      // claim unbounded height of its own.
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      itemCount: plan.stops.length,
+      // `onReorderItem`, not the deprecated `onReorder`: it hands back a
+      // newIndex already adjusted for the item having been lifted out. The old
+      // callback required the caller to subtract one when dragging downwards,
+      // and doing both would rotate the list by one on every downward drag.
+      onReorderItem: onReorder ?? (_, _) {},
+      itemBuilder: (context, i) {
+        final stop = plan.stops[i];
+        return Column(
+          // Keyed on the place, not the index: an index key would make Flutter
+          // reuse the wrong row's state the moment the list is reordered.
+          key: ValueKey(stop.place.id),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (i < plan.legs.length) LegLine(leg: plan.legs[i]),
+            Row(
+              children: [
+                if (onReorder != null)
+                  ReorderableDragStartListener(
+                    index: i,
+                    child: Padding(
+                      padding: EdgeInsets.only(right: tokens.xs),
+                      child: Icon(
+                        Icons.drag_handle,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: StopTile(
+                    stop: stop,
+                    plannedFor: plannedFor,
+                    partySize: plan.partySize,
+                    onTap: onStopTap == null ? null : () => onStopTap!(stop),
+                  ),
+                ),
+                if (onRemove != null)
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    // Named for what it removes. "Remove" alone tells a screen
+                    // reader nothing about which of five rows it is on.
+                    tooltip: 'Remove ${stop.place.name}',
+                    onPressed: () => onRemove!(stop),
+                  ),
+              ],
+            ),
+          ],
+        );
+      },
     );
   }
 }

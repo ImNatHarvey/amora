@@ -8,9 +8,12 @@ don't say. Last updated for the Phase 4 close-out commit.
 
 Phases 0 and 1 are complete and accepted on device. **Phases 2, 3 and 4 are code
 complete and none of the three is accepted** — see the ledger below for exactly
-which criteria are outstanding and why. **Next is Phase 5 (editing)**, chosen
-over 3b because it is the only remaining phase fully acceptable with no Gemini
-key and no new data.
+which criteria are outstanding and why.
+
+**Phase 5 is complete**, and it is the first phase since 1 whose acceptance
+criteria were actually *met* rather than deferred: nothing in editing needs a
+real place to be true. Only the device run is outstanding. **Next is Phase 3b
+(conversational intake)**, then Phase 6 — which ends the MVP.
 
 **All three are blocked on the same thing: real places.** The criterion is
 "real, currently-open places"; all 15 rows are still `test-*`. See "Seed data"
@@ -69,6 +72,11 @@ a phase.**
 | 4 | whether the *map* is useful | real coordinates; 15 invented ones draw a cluster and 72 m legs |
 | 4 | "a DIY activity plays its tutorial in-app" | one real `tutorial_url` — the **code is done**, see below |
 | 4 | on-device confirmation of the Phase 4 UI | Nat's phone was in use on 2026-08-08 |
+| 5 | on-device confirmation of drag-to-reorder | same phone. Both *written* criteria are met; this is the extra check §3 requires of every phase |
+
+**Phase 5 is not in this ledger for its own criteria**, and that is the point:
+editing is true or false regardless of whether a place is real, so it could be
+finished. Every other open row above is waiting on 8 rows of data or one API key.
 
 Two of these are one free API key and one evening of desk work. Neither gets
 easier by being left later, and both gate the only question that matters — is a
@@ -227,6 +235,79 @@ into `activities.csv`, re-import, and the criterion is met.
   — the user would save something other than what they were looking at.
 - **`plans.origin_area` exists because a reopened plan needs it.** The first leg
   starts at the origin, not at a stop.
+
+## Phase 5 — editing. Complete.
+
+Reorder, remove, retime, add a stop; `plan_edits` logged; user places
+quarantined. Two migrations, `20260808155247` and `20260808155446`.
+
+**One recompute path, and that is the whole design.** `save_plan`'s item/leg
+loop is now `write_plan_stops`, which `edit_plan` also calls. Do not reintroduce
+a second copy: two would let a saved plan and an edited plan disagree about a
+fare, which is the bug class this repo has already shipped twice (party size in
+two files, `_pesos` in two screens).
+
+**An edit sends the whole new stop list**, not a delta, and `edit_plan` returns
+the whole recomputed plan. That keeps always-live editing at one round trip and
+means the device never renders a total it computed.
+
+**Phase 0 had already built most of the quarantine.** `places` has had
+`source`, `verification_tier` and `submitted_by_user_id` since the first
+migration; `places_read` has always returned curated rows plus your own; and
+`retrieve_candidates` has filtered `verification_tier = 'curated'` explicitly
+since Phase 2. Phase 5 added the insert policy Phase 0's comment promised, and
+proved the rest.
+
+**Five attacks, all refused** — and **every one verified as service role**. A
+check run as the attacker is subject to the same RLS, so "zero rows" would mean
+"blocked" and "succeeded but invisible to me" identically. That nearly produced
+two false passes here.
+
+| Attack | Outcome |
+|---|---|
+| Insert `verification_tier='curated'` | refused by the `with check` |
+| Insert a row attributed to another user | refused |
+| Promote own row to curated by UPDATE | refused — no update policy, no update grant |
+| Edit another user's plan | refused |
+| Delete rows from `plan_edits` | refused — append-only by omission |
+
+**Do not grant `update` or `delete` on `places`.** The insert policy pins
+`source`, `verification_tier` and `submitted_by_user_id`; an update grant would
+be the same hole through a second door.
+
+**`known_areas` is not `origin_areas`, deliberately.** An origin needs a
+coordinate and the only honest one is the centroid of curated places. A new
+place brings its own from a map tap, so it may sit in Duhat, Wakas or Batia —
+barangays with fares but no places, and exactly where a missing stop is worth
+adding. Free text was rejected because `fare_for` matches barangay by exact
+string: one typo makes every leg to that stop unpriced forever, silently.
+
+**Gotchas worth not rediscovering:**
+
+- **`ReorderableListView.onReorder` is deprecated in Flutter 3.44** in favour of
+  `onReorderItem`, which hands back a newIndex **already adjusted** for the
+  lifted item. The old callback required subtracting one when dragging
+  downwards. Doing both rotates the list by one on every downward drag. This was
+  caught by `flutter analyze`, not by a test, and the tests now cover both
+  directions.
+- **Changing a function's return type needs a `drop`** — `create or replace`
+  refuses. The drop takes the grants with it, so the `revoke`/`grant` pair must
+  be reissued with the full argument list.
+- **The placeholder coordinates are clustered**, so a cross-barangay leg can
+  still be under the 800 m walk threshold and cost nothing. The first acceptance
+  plan produced three free walks and exercised no fare at all. Pick stops more
+  than 800 m apart when testing money — `Dessert Bar`/`Casual Diner` are 1,693 m
+  apart with a ₱90 tricycle.
+- **A place with null `opening_hours` is invisible to `is_open_at` anyway**, so
+  a quarantine test on a fresh user place passes for the wrong reason. Give it
+  hours and a near-origin coordinate first, so tier is the only thing left that
+  can exclude it.
+- **`00:00`–`23:59` is not "all day".** A test run at 23:59:27 Manila failed on
+  27 seconds. The all-day form is `00:00`–`24:00`.
+
+**Test accounts:** `phase1@example.com` and `phase5b@example.com` (added here for
+the cross-account test, password `phase5-test-pw`). Keep the second — RLS cannot
+be tested in both directions with one user, and Phases 6 and 7 will need it.
 
 ## Review pass — what it found
 
@@ -496,14 +577,22 @@ Agreed with Nat and now the standing shape of a session:
 3. **Fix what that finds**, in the same commit.
 4. **Update the docs in the same commit**, never after — `HANDOFF.md` and any
    `00-architecture.md` phase entry the work changed.
-5. **Commit and push.** Then **stop** and plan the next phase.
+5. **Commit, push, open a PR, merge it.** One commit per phase on a branch off
+   `master`, then `gh pr create` and `gh pr merge --merge` — a merge commit, so
+   the branch stays visible in the network graph. Then **stop** and plan the
+   next phase.
+
+**GitHub CLI** was installed 2026-08-08 via `winget install GitHub.cli`. It is
+not on PATH in an already-open shell; use
+`"C:\Program Files\GitHub CLI\gh.exe"` or open a new terminal. **`gh auth login`
+is interactive and Nat has to run it** — Claude cannot.
 
 **Known-permanent advisor noise, so a future session does not chase it:**
 `plan_cache` RLS-with-no-policies (that *is* "service role only"), leaked-password
-protection (Pro-only, D7), and five `unused_index` INFO notices. The indexes are
-not dead — `plans` and `plan_items` have **zero rows**, and Postgres will not
-choose an index on a 15-row table, so "never used" measures the dataset, not the
-schema. Re-check once real data and real traffic exist.
+protection (Pro-only, D7), and six `unused_index` INFO notices. The indexes are
+not dead — `plans` and `plan_items` sit at **zero rows** between test runs, and
+Postgres will not choose an index on a 15-row table, so "never used" measures the
+dataset, not the schema. Re-check once real data and real traffic exist.
 
 ## Seed data — placeholders, must be replaced
 

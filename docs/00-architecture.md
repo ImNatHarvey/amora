@@ -438,8 +438,19 @@ plan_legs
                                       -- correction signal transit will ever get.
 
 plan_edits                            -- product-quality telemetry
-  id  plan_id  user_id  edit_type     -- 'add'|'remove'|'reorder'|'retime'|'swap'
-  target_item_id  created_at
+  id  plan_id  user_id  edit_type     -- 'add'|'remove'|'reorder'|'retime'
+  target_item_id                      -- on delete set null: edit_plan rewrites
+                                      -- a plan's items on every edit, so this
+                                      -- is deliberately short-lived
+  target_place_id                     -- what telemetry actually groups by. A
+                                      -- plan_item id is per-plan, so counting
+                                      -- removals by it groups nothing across
+                                      -- users — every row is its own group,
+                                      -- and invariant 7's question ("do most
+                                      -- users delete the same stop?") cannot
+                                      -- be asked. Same failure Phase 6 avoids
+                                      -- with one report per stop.
+  created_at
 
 memories
   id  plan_id  user_id  photo_path  caption
@@ -925,11 +936,55 @@ notes are readable from the plan; a DIY activity plays its tutorial in-app.
 > which reduces how often this matters but cannot reach zero — an owner can
 > disable embedding after the link is collected.
 
-**Phase 5 — Editing**
+**Phase 5 — Editing — ✅ COMPLETE (device run outstanding)**
 Reorder, remove, retime, add a custom stop. Legs and totals recompute. `plan_edits`
 logged. User-added places land quarantined.
 *Accept:* take a generated plan, make three edits, totals stay correct, and a
 user-added place does not appear in another account's generated plans.
+
+> **Both criteria met, and on placeholder data legitimately** — unlike Phases 2,
+> 3 and 4, nothing here needs a real place to be *true*. Three edits were driven
+> against the live database and every stored figure was recomputed by hand from
+> `places` and `transit_fares`; the reorder moved fares ₱120 → ₱90, which is
+> what proves the recompute ran rather than the rows being reshuffled.
+>
+> **One recompute path.** `save_plan`'s item/leg loop was extracted into
+> `write_plan_stops`, which `edit_plan` also calls. Two copies would let a saved
+> plan and an edited plan disagree about a fare, and this repo has already
+> shipped that bug class twice — party size in two files, `_pesos` in two
+> screens. Both were found late; both needed one rule to have two homes.
+>
+> **An edit sends the whole new stop list, not a delta.** Order is the one thing
+> the client is authoritative about, because it is a preference rather than a
+> fact. A delta API would need four paths that each recompute legs correctly,
+> which is four chances to be wrong against one. `edit_plan` returns the whole
+> recomputed plan so an edit costs one round trip and the device never renders a
+> total it worked out itself.
+>
+> **The quarantine was already structural before this phase.**
+> `retrieve_candidates` has filtered `verification_tier = 'curated'` explicitly
+> since Phase 2, over and above the `places_read` policy. Phase 5's job was to
+> *prove* it and to open the narrowest insert path, not to build a mechanism.
+> Five attacks were run and all five refused: inserting a curated row, planting
+> a row on another account, promoting one's own row by UPDATE, editing another
+> user's plan, and deleting the edit log. **Each was verified as service role**,
+> because a check run as the attacker is subject to the same RLS and would
+> report success as zero rows either way.
+>
+> **`known_areas`, not `origin_areas`, bounds a user-added stop.** An origin
+> needs a coordinate and the only honest one is the centroid of curated places,
+> so a barangay with none cannot be an origin. A new place brings its own
+> coordinate from a map tap, so that objection does not apply — and using
+> `origin_areas` would have rejected Duhat, Wakas and Batia, which
+> `transit_fares` knows routes to and where a missing stop is most worth adding.
+> Free text was the other wrong answer: `fare_for` matches barangay by exact
+> string, so one typo makes every leg to that stop unpriced forever with nothing
+> on screen to explain why.
+>
+> **Undo on remove is not in this phase's line above, and ships anyway.**
+> Editing is always live, so a mistapped ✕ has no "Done" to reconsider before.
+> `edit_plan` taking a whole stop list makes undo an ordinary edit rather than a
+> rollback path.
 
 **Phase 6 — Completion & actuals**
 Mark complete. Photo (compressed to ~150 KB), caption, actual spend, actual fare,
