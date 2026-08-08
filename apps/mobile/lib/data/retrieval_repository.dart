@@ -40,6 +40,30 @@ class RetrievalRepository {
     );
   }
 
+  /// The barangays a user-added stop may sit in.
+  ///
+  /// Wider than [originAreas], deliberately. An origin needs a coordinate and
+  /// the only honest one is the centroid of curated places, so a barangay with
+  /// none cannot be an origin. A new place has no such problem — the user taps
+  /// its coordinate on a map, so it brings its own. Using [originAreas] here
+  /// would reject Duhat, Wakas and Batia, which `transit_fares` knows routes to
+  /// and which are exactly where a missing stop is most worth adding.
+  Future<List<String>> knownAreas(String city) {
+    return guard(
+      () async {
+        final rows = await _client.rpc<List<dynamic>>(
+          'known_areas',
+          params: {'p_city': city},
+        );
+
+        return rows
+            .map((row) => (row as Map<String, dynamic>)['area'] as String)
+            .toList();
+      },
+      fallback: 'Could not load the areas we cover.',
+    );
+  }
+
   /// How many people the plan is for — see [Party.size], which is the only
   /// place this number is written down.
   static const partySize = Party.size;

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
+import '../../models/simple_plan.dart';
 import '../../theme/app_tokens.dart';
 import '../../ui/error_retry.dart';
 import '../../util/format.dart';
@@ -20,6 +21,37 @@ class PlanDetailScreen extends ConsumerWidget {
   const PlanDetailScreen({required this.planId, super.key});
 
   final String planId;
+
+  /// Removes a stop, and offers to put it back.
+  ///
+  /// Editing here is always live — there is no "Done" to reconsider before —
+  /// so a mistapped ✕ would otherwise destroy a stop with no way back. Undo is
+  /// cheap because the removed stop is still in hand and `edit_plan` takes a
+  /// whole stop list, so restoring is one more ordinary edit rather than a
+  /// special rollback path.
+  Future<void> _removeWithUndo(
+    BuildContext context,
+    WidgetRef ref,
+    PlanStop stop,
+    SimplePlan plan,
+  ) async {
+    final index = plan.stops.indexWhere((s) => s.place.id == stop.place.id);
+    final messenger = ScaffoldMessenger.of(context);
+    final editor = ref.read(savedPlanProvider(planId).notifier);
+
+    await editor.removeStop(stop);
+
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Removed ${stop.place.name}'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () => editor.restoreStop(stop, index),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -90,6 +122,17 @@ class PlanDetailScreen extends ConsumerWidget {
                   plan: plan,
                   onStopTap: (stop) =>
                       context.push('${Routes.place}/${stop.place.id}'),
+                  onReorder: (oldIndex, newIndex) => ref
+                      .read(savedPlanProvider(planId).notifier)
+                      .reorder(oldIndex, newIndex),
+                  onRemove: (stop) => _removeWithUndo(context, ref, stop, plan),
+                ),
+                SizedBox(height: tokens.sm),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add a stop'),
+                  onPressed: () =>
+                      context.push('${Routes.plan}/$planId/add-stop'),
                 ),
                 PlanCostSummary(
                   totals: plan.totals,

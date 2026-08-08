@@ -1,10 +1,12 @@
 import 'package:mobile/data/auth_repository.dart';
+import 'package:mobile/data/plans_repository.dart';
 import 'package:mobile/data/profiles_repository.dart';
 import 'package:mobile/data/resources_repository.dart';
 import 'package:mobile/data/retrieval_repository.dart';
 import 'package:mobile/models/activity.dart';
 import 'package:mobile/models/profile.dart';
 import 'package:mobile/models/resource.dart';
+import 'package:mobile/models/saved_plan.dart';
 import 'package:mobile/models/simple_plan.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -153,6 +155,14 @@ class FakeRetrievalRepository implements RetrievalRepository {
   @override
   Future<List<OriginArea>> originAreas(String city) async => areas;
 
+  /// Deliberately wider than [areas], mirroring the real split: `known_areas`
+  /// includes barangays that have fares but no curated places, and a fake that
+  /// returned the same list either way would hide a screen using the wrong one.
+  List<String> known = const ['Bunlo', 'Duhat', 'Poblacion', 'Turo', 'Wakas'];
+
+  @override
+  Future<List<String>> knownAreas(String city) async => known;
+
   @override
   Future<SimplePlan> buildSimplePlan({
     required String city,
@@ -183,4 +193,77 @@ class FakeRetrievalRepository implements RetrievalRepository {
           candidateActivities: const [],
         );
   }
+}
+
+/// Records what the screen asked the server to do, and hands back whatever the
+/// test says the server would reply.
+///
+/// It deliberately does **not** recompute totals or reorder anything itself.
+/// `edit_plan` recomputes every peso in Postgres (invariant 3), so a fake that
+/// did its own arithmetic would be testing the fake — and would hide the very
+/// drift the single `write_plan_stops` path exists to prevent. What these tests
+/// check is which stop list the screen sends.
+class FakePlansRepository implements PlansRepository {
+  FakePlansRepository({this.plan, this.error});
+
+  /// Returned by [byId] and, unchanged, by [edit].
+  SavedPlan? plan;
+
+  /// When set, [edit] throws it instead of returning.
+  final Object? error;
+
+  /// Every edit, in call order.
+  final List<({PlanEditType type, List<String> placeIds, String? target})>
+      edits = [];
+
+  final List<Map<String, dynamic>> addedPlaces = [];
+
+  @override
+  Future<SavedPlan?> byId(String id) async => plan;
+
+  @override
+  Future<SavedPlan> edit({
+    required String planId,
+    required PlanEditType type,
+    required List<Map<String, dynamic>> stops,
+    String? targetPlaceId,
+  }) async {
+    edits.add((
+      type: type,
+      placeIds: [for (final s in stops) s['place_id'] as String],
+      target: targetPlaceId,
+    ));
+    if (error != null) throw error!;
+    return plan!;
+  }
+
+  @override
+  Future<String> addUserPlace({
+    required String name,
+    required String category,
+    required String barangay,
+    required double lat,
+    required double lng,
+    int priceMinPhpCents = 0,
+    int? priceMaxPhpCents,
+  }) async {
+    addedPlaces.add({
+      'name': name,
+      'barangay': barangay,
+      'lat': lat,
+      'lng': lng,
+      'price_min_php_cents': priceMinPhpCents,
+    });
+    return 'new-place-id';
+  }
+
+  @override
+  Future<List<PlanSummary>> listMine() async => const [];
+
+  @override
+  Future<String> save({
+    required Map<String, dynamic> payload,
+    String? title,
+  }) async =>
+      'saved-plan-id';
 }
