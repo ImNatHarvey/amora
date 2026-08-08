@@ -19,6 +19,7 @@ class PlanTimeline extends StatelessWidget {
     this.onStopTap,
     this.onReorder,
     this.onRemove,
+    this.onRetime,
     super.key,
   });
 
@@ -27,13 +28,15 @@ class PlanTimeline extends StatelessWidget {
   /// Opens place detail. Null in contexts where there is nowhere to go.
   final void Function(PlanStop stop)? onStopTap;
 
-  /// Supplied only where the plan is editable. When both this and [onRemove]
-  /// are null the timeline renders exactly as it did before Phase 5, which is
-  /// what keeps the read-only copy on the request screen untouched.
+  /// Supplied only where the plan is editable. When all three are null the
+  /// timeline renders exactly as it did before Phase 5, which is what keeps the
+  /// read-only copy on the request screen untouched.
   final void Function(int oldIndex, int newIndex)? onReorder;
   final void Function(PlanStop stop)? onRemove;
+  final void Function(PlanStop stop)? onRetime;
 
-  bool get _editable => onReorder != null || onRemove != null;
+  bool get _editable =>
+      onReorder != null || onRemove != null || onRetime != null;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +54,7 @@ class PlanTimeline extends StatelessWidget {
             onStopTap: onStopTap,
             onReorder: onReorder,
             onRemove: onRemove,
+            onRetime: onRetime,
           )
         else
           for (var i = 0; i < plan.stops.length; i += 1) ...[
@@ -85,6 +89,7 @@ class _ReorderableStops extends StatelessWidget {
     this.onStopTap,
     this.onReorder,
     this.onRemove,
+    this.onRetime,
   });
 
   final SimplePlan plan;
@@ -92,6 +97,7 @@ class _ReorderableStops extends StatelessWidget {
   final void Function(PlanStop stop)? onStopTap;
   final void Function(int oldIndex, int newIndex)? onReorder;
   final void Function(PlanStop stop)? onRemove;
+  final void Function(PlanStop stop)? onRetime;
 
   @override
   Widget build(BuildContext context) {
@@ -140,6 +146,12 @@ class _ReorderableStops extends StatelessWidget {
                     onTap: onStopTap == null ? null : () => onStopTap!(stop),
                   ),
                 ),
+                if (onRetime != null)
+                  IconButton(
+                    icon: const Icon(Icons.schedule),
+                    tooltip: 'Set a time for ${stop.place.name}',
+                    onPressed: () => onRetime!(stop),
+                  ),
                 if (onRemove != null)
                   IconButton(
                     icon: const Icon(Icons.close),
@@ -204,7 +216,9 @@ class StopTile extends StatelessWidget {
                   ),
                   if (stop.startTimeUtc != null)
                     Text(
-                      formatManila(toManila(stop.startTimeUtc!)),
+                      // Time only. The date is stated once in the heading, and
+                      // repeating it on every row buries the part that differs.
+                      formatManilaTime(toManila(stop.startTimeUtc!)),
                       style: theme.textTheme.bodySmall
                           ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),

@@ -48,7 +48,11 @@ class RetrievalRepository {
   /// its coordinate on a map, so it brings its own. Using [originAreas] here
   /// would reject Duhat, Wakas and Batia, which `transit_fares` knows routes to
   /// and which are exactly where a missing stop is most worth adding.
-  Future<List<String>> knownAreas(String city) {
+  /// [KnownArea.hasFares] is carried rather than discarded because it changes
+  /// what the user should be told: a barangay with no recorded fare produces a
+  /// permanently unpriced leg, and that is worth saying *before* they pick it
+  /// rather than leaving them to wonder why the total came back hedged.
+  Future<List<KnownArea>> knownAreas(String city) {
     return guard(
       () async {
         final rows = await _client.rpc<List<dynamic>>(
@@ -57,7 +61,7 @@ class RetrievalRepository {
         );
 
         return rows
-            .map((row) => (row as Map<String, dynamic>)['area'] as String)
+            .map((row) => KnownArea.fromMap(row as Map<String, dynamic>))
             .toList();
       },
       fallback: 'Could not load the areas we cover.',

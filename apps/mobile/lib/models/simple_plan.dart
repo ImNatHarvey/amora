@@ -31,6 +31,37 @@ class OriginArea {
   final int placeCount;
 }
 
+/// A barangay a user-added stop may sit in.
+///
+/// Wider than [OriginArea], and not interchangeable with it: an origin needs a
+/// coordinate derived from curated places, while a new place brings its own
+/// from a map tap. See `public.known_areas`.
+class KnownArea {
+  const KnownArea({
+    required this.area,
+    required this.hasPlaces,
+    required this.hasFares,
+  });
+
+  factory KnownArea.fromMap(Map<String, dynamic> map) => KnownArea(
+        area: map['area'] as String,
+        hasPlaces: map['has_places'] as bool? ?? false,
+        hasFares: map['has_fares'] as bool? ?? false,
+      );
+
+  final String area;
+
+  /// Whether the catalogue already has curated places here.
+  final bool hasPlaces;
+
+  /// Whether `transit_fares` knows a route here.
+  ///
+  /// False means every leg to a stop in this barangay will report unpriced and
+  /// be left out of the total — a real gap that should stay visible, not an
+  /// error. Worth warning about at the moment of choosing.
+  final bool hasFares;
+}
+
 /// One stop on a plan: a place, plus where it falls in the sequence.
 class PlanStop {
   const PlanStop({

@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 import '../../data/plans_repository.dart';
 import '../../data/profiles_repository.dart';
 import '../../data/retrieval_repository.dart';
+import '../../models/simple_plan.dart';
 import '../../theme/app_tokens.dart';
 import '../../ui/error_retry.dart';
 import 'plan_providers.dart';
@@ -17,7 +18,7 @@ import 'plan_providers.dart';
 /// `known_areas`, not `origin_areas` — see [RetrievalRepository.knownAreas].
 /// Keyed off the profile's city for the same reason `originAreasProvider` is:
 /// the day a second municipality has data, this needs no change.
-final knownAreasProvider = FutureProvider<List<String>>((ref) async {
+final knownAreasProvider = FutureProvider<List<KnownArea>>((ref) async {
   final profile = await ref.watch(currentProfileProvider.future);
   final city = profile?.city;
   if (city == null || city.isEmpty) return const [];
@@ -67,6 +68,13 @@ class _AddStopScreenState extends ConsumerState<AddStopScreen> {
     _price.dispose();
     _mapController.dispose();
     super.dispose();
+  }
+
+  /// True while nothing is chosen, so the helper text stays neutral rather than
+  /// warning about a barangay the user has not picked.
+  bool _selectedHasFares(List<KnownArea> areas) {
+    if (_barangay == null) return true;
+    return areas.any((a) => a.area == _barangay && a.hasFares);
   }
 
   Future<void> _submit() async {
@@ -151,17 +159,25 @@ class _AddStopScreenState extends ConsumerState<AddStopScreen> {
                 ),
                 data: (list) => DropdownButtonFormField<String>(
                   initialValue: _barangay,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Which barangay?',
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                     // Not decoration: fares are keyed by barangay and matched
                     // by exact text, so this is what decides whether the leg
-                    // to this stop can be priced at all.
-                    helperText: 'This is how we work out the fare to get there.',
+                    // to this stop can be priced at all. When we have no fare
+                    // for the barangay chosen, say so here rather than letting
+                    // the total come back hedged with no explanation.
+                    helperText: _selectedHasFares(list)
+                        ? 'This is how we work out the fare to get there.'
+                        : 'No fare recorded to $_barangay yet, so the trip '
+                            'there will show as unpriced.',
                   ),
                   items: [
                     for (final area in list)
-                      DropdownMenuItem(value: area, child: Text(area)),
+                      DropdownMenuItem(
+                        value: area.area,
+                        child: Text(area.area),
+                      ),
                   ],
                   onChanged: (value) => setState(() => _barangay = value),
                   validator: (value) =>

@@ -239,7 +239,23 @@ into `activities.csv`, re-import, and the criterion is met.
 ## Phase 5 — editing. Complete.
 
 Reorder, remove, retime, add a stop; `plan_edits` logged; user places
-quarantined. Two migrations, `20260808155247` and `20260808155446`.
+quarantined. Three migrations: `20260808155247`, `20260808155446`, and
+`20260808163648` (the review fix below).
+
+**Retime shipped a session late, and the gap is worth remembering.** The first
+Phase 5 commit built reorder, remove and add, and `edit_plan` accepted `retime`
+and was verified in SQL — but **nothing in Flutter ever called it**. Three of
+the four edit types in §8's line were reachable. It looked finished from the
+database side and from the test suite, because both were exercising a path the
+user could not reach. **When a phase lists capabilities, check each one against
+a UI affordance, not against a function signature.**
+
+The clock button opens a bottom sheet (`retime_sheet.dart`): a Material time
+picker plus duration chips. **The conversion is where this goes wrong
+silently** — `showTimePicker` returns a Manila wall clock, the column stores
+UTC, and combining them without `manilaToUtc` shifts every retimed stop eight
+hours while the plan still renders perfectly plausibly. Verified against the
+live database: 19:30 Manila stored as `11:30Z`, order and every fare unchanged.
 
 **One recompute path, and that is the whole design.** `save_plan`'s item/leg
 loop is now `write_plan_stops`, which `edit_plan` also calls. Do not reintroduce
@@ -282,8 +298,40 @@ barangays with fares but no places, and exactly where a missing stop is worth
 adding. Free text was rejected because `fare_for` matches barangay by exact
 string: one typo makes every leg to that stop unpriced forever, silently.
 
+### What the review pass found, all fixed
+
+- **`save_plan` and `edit_plan` disagreed about which city a plan is in.**
+  `save_plan` resolved it through `profiles join places on p.city = pr.city`,
+  which returns the profile's city *only if a place already exists there* and
+  otherwise silently falls back to `'Bocaue'`; `edit_plan` read `pr.city`
+  directly. For a user whose city holds no curated places the two diverge, and
+  the symptom is not a wrong number — `save_plan` writes an `origin_area` from
+  Bocaue's `origin_areas` and `edit_plan` then looks it up in a different
+  city's, finds nothing, and raises on **every** edit. The plan becomes
+  permanently uneditable. Unreachable today because profile setup fixes city to
+  Bocaue (D1), which is exactly why it was worth fixing now: it arrives on the
+  day coverage expands, which is the day nobody is looking at `save_plan`. Now
+  one `plan_city()`.
+- **`PlanEditor.addPlace` had its own copy of `_apply`'s body** — the same
+  loading-with-previous, guard and invalidate. Third instance of the shape that
+  produced the party-size and `_pesos` bugs. Now both go through `_send`.
+- **`known_areas` returned `has_places` / `has_fares` and Dart discarded both.**
+  Rather than drop columns, `has_fares` now warns in the add-stop picker: a
+  barangay with no recorded fare gives a permanently unpriced leg, and the user
+  should hear that while choosing rather than after the total comes back hedged.
+
+**Tests added for what nothing was checking:** that an edit carries the model's
+`note` and `activity_id` forward (had it regressed, every reorder would strip
+the only thing the model authors — the plan would still render and still cost
+correctly, and quietly be worth less), that a retime stores the right instant,
+and the whole of `add_stop_screen`, which had no coverage at all.
+
 **Gotchas worth not rediscovering:**
 
+- **A widget test viewport is 800 px tall and a `ListView` does not build what
+  is off-screen.** `add_stop_screen`'s submit button simply did not exist to
+  tap. Raise `tester.view.physicalSize` rather than scrolling — scrolling drags
+  across the map and starts a gesture instead.
 - **`ReorderableListView.onReorder` is deprecated in Flutter 3.44** in favour of
   `onReorderItem`, which hands back a newIndex **already adjusted** for the
   lifted item. The old callback required subtracting one when dragging
