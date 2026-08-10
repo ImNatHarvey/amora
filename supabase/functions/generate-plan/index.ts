@@ -102,6 +102,20 @@ function buildPrompt(
   ].filter(Boolean).join('\n');
 }
 
+/**
+ * A failure that came from Gemini rather than from us, carrying its status.
+ *
+ * Without it the handler's catch flattens every upstream problem to a 500, and
+ * a caller cannot tell "you asked too fast, wait" from "something is broken".
+ * On a free tier limited to **5 requests per minute per model**, 429 is an
+ * ordinary condition to expect and retry — not an error worth showing anyone.
+ */
+class UpstreamError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
 async function callGemini(prompt: string): Promise<{ plans: { title: string; stops: unknown[] }[] }> {
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
@@ -127,7 +141,20 @@ async function callGemini(prompt: string): Promise<{ plans: { title: string; sto
         `secret to a model available on your key. Body: ${body}`,
       );
     }
-    throw new Error(`Gemini ${response.status}: ${body}`);
+    if (response.status === 429) {
+      throw new UpstreamError(
+        429,
+        'Too many requests to the model just now. The free tier allows 5 per ' +
+        'minute; try again shortly.',
+      );
+    }
+    if (response.status === 503) {
+      throw new UpstreamError(
+        503,
+        'The model is busy right now. This is temporary — try again shortly.',
+      );
+    }
+    throw new UpstreamError(response.status, `Gemini ${response.status}: ${body}`);
   }
 
   const data = await response.json();
@@ -327,6 +354,12 @@ Deno.serve(async (request) => {
     return json(payload);
   } catch (error) {
     console.error('GENERATE_PLAN_FAILED', error instanceof Error ? error.message : error);
+
+    // Pass an upstream status through rather than flattening it to 500, so a
+    // caller can distinguish "wait and retry" from "this is broken".
+    if (error instanceof UpstreamError) {
+      return json({ error: error.message }, error.status);
+    }
     return json({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);
   }
 });

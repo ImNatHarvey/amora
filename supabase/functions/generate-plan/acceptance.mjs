@@ -61,6 +61,37 @@ function fail(message) {
   throw new Error(message);
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The free tier allows **5 requests per minute per model** — measured during
+ * the Phase 3b acceptance run, which came back with
+ * `quotaValue: "5", quotaId: GenerateRequestsPerMinutePerProjectPerModel-FreeTier`.
+ *
+ * 13 seconds is ~4.6/minute, just inside it. Unspaced, the run starts returning
+ * 429 partway through and the failure reads as "the model produced an invalid
+ * plan" rather than "we asked too fast" — which is the worst kind of result,
+ * because it sends you looking at the prompt.
+ *
+ * 503 is retried too: that is Gemini reporting its own overload, not a verdict
+ * on the request.
+ */
+const GAP_MS = 13000;
+
+async function throttled(call, label) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await sleep(GAP_MS);
+    const result = await call();
+    if (result.status !== 429 && result.status !== 503) return result;
+
+    console.log(
+      `    (${result.status} on ${label} — backing off, attempt ${attempt + 1}/3)`,
+    );
+    await sleep(35000);
+  }
+  return call();
+}
+
 // --- the request under test --------------------------------------------------
 //
 // Budget and time vary across runs on purpose. Twenty identical requests would
@@ -133,14 +164,18 @@ async function main() {
   console.log(`  signed in as ${email}`);
 
   const generate = (body) =>
-    fetch(fn, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    throttled(
+      () =>
+        fetch(fn, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        }),
+      `₱${body.budget_php_cents / 100} ${body.planned_for.slice(0, 16)}`,
+    );
 
   // --- 20 consecutive generations -------------------------------------------
   const results = [];

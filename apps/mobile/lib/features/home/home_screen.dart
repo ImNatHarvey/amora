@@ -69,7 +69,10 @@ class HomeScreen extends ConsumerWidget {
               ),
               SizedBox(height: tokens.sm),
               OutlinedButton(
-                onPressed: () => context.push(Routes.planRequest),
+                // The conversation, as of Phase 3b. The Phase 2 form is still
+                // reachable from inside it — it is the fallback when extraction
+                // fails, not a retired screen.
+                onPressed: () => context.push(Routes.intake),
                 child: const Text('Plan something'),
               ),
               SizedBox(height: tokens.sm),

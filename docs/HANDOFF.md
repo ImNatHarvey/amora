@@ -12,8 +12,12 @@ which criteria are outstanding and why.
 
 **Phase 5 is complete**, and it is the first phase since 1 whose acceptance
 criteria were actually *met* rather than deferred: nothing in editing needs a
-real place to be true. Only the device run is outstanding. **Next is Phase 3b
-(conversational intake)**, then Phase 6 — which ends the MVP.
+real place to be true. Only the device run is outstanding.
+
+**Phase 3b is built and awaiting one secret.** The conversation, the chips, the
+extraction function, `intake_cache` and the guard tests are all done and green.
+Its acceptance run is a command and it is **blocked on `GEMINI_API_KEY`** — see
+the ledger. **Next is Phase 6**, which ends the MVP.
 
 **All three are blocked on the same thing: real places.** The criterion is
 "real, currently-open places"; all 15 rows are still `test-*`. See "Seed data"
@@ -73,6 +77,28 @@ a phase.**
 | 4 | "a DIY activity plays its tutorial in-app" | one real `tutorial_url` — the **code is done**, see below |
 | 4 | on-device confirmation of the Phase 4 UI | Nat's phone was in use on 2026-08-08 |
 | 5 | on-device confirmation of drag-to-reorder | same phone. Both *written* criteria are met; this is the extra check §3 requires of every phase |
+| 3b | on-device confirmation of the conversation | the phone |
+
+**Phase 3b's own criteria are MET as of 2026-08-10** — 20/20 extractions, zero
+catalogue names, both rephrasings cache hits, on `gemini-2.5-flash-lite`. Run
+`node supabase/functions/extract-intake/acceptance.mjs` to reproduce.
+
+**Phase 3's 20 generations are still open, and no longer for want of a key.**
+The run errored 11 of 20. Diagnosed, not guessed: the failures returned in
+~900 ms while successes take 20–30 s, and a sub-second failure is Gemini
+rejecting instantly with a 429 — which the **deployed** `generate-plan` still
+flattens to a 500, so the harness's retry never sees it. The fix is written in
+`generate-plan/index.ts` (the `UpstreamError` class) but **has not been
+deployed**. Deploy it, then re-run.
+
+**The `GEMINI_API_KEY` row is now the most expensive one open.** It is free and
+takes two minutes, and it alone blocks *four* criteria across two phases —
+Phase 3's 20 generations and hand-recomputed totals, and Phase 3b's chips,
+cache hit and adversarial run. The adversarial run is the direct test of
+invariant 1 for the extraction path: **the only evidence that the model does
+not emit place names.** The unit tests prove nothing unsafe can get through even
+if it does, which is the stronger guarantee — but it is not the same claim, and
+both were specified.
 
 **Phase 5 is not in this ledger for its own criteria**, and that is the point:
 editing is true or false regardless of whether a place is real, so it could be
@@ -236,6 +262,148 @@ into `activities.csv`, re-import, and the criterion is met.
 - **`plans.origin_area` exists because a reopened plan needs it.** The first leg
   starts at the origin, not at a stop.
 
+## The Gemini free tier is 5 requests per minute. Measured, not assumed.
+
+The first Phase 3b acceptance run hit 429 and said so exactly:
+
+```
+quotaId:    GenerateRequestsPerMinutePerProjectPerModel-FreeTier
+quotaValue: 5
+model:      gemini-2.5-flash
+```
+
+**Five per minute, per project, per model.** §7 already warned the quota was
+"managed, not solved" at Phase 3b; this is the number.
+
+What it means for the product, since §7 says a new utterance costs **two** calls
+(extract, then compose):
+
+- **~2.5 new plan requests per minute across all users**, not per user.
+- A **tapped starter chip costs zero** — it skips extraction entirely. A
+  `plan_cache` hit costs zero. An `intake_cache` hit costs zero.
+- So the cache economics stop being a nicety and become the thing that makes the
+  product usable at all. Anything that weakens them — free text in a cache key,
+  a chip that calls the model — is a product-level regression, not a
+  tidiness issue.
+
+Two consequences already acted on:
+
+- **Both acceptance harnesses pace at 13s** (~4.6/min) and retry 429 and 503.
+  Unpaced, a run fails partway and reads as "the model got it wrong", which
+  sends you looking at the prompt instead of the clock.
+- **Both Edge Functions now pass an upstream status through** rather than
+  flattening it to 500. A caller could not previously distinguish "wait 30
+  seconds" from "this is broken" — and the acceptance harness's own retry never
+  fired because it was watching for a 429 that had already become a 500.
+
+**503 also happens** — Gemini reporting its own overload. Three of twenty on the
+first run. It is transient and retried, not a fault.
+
+## Extraction runs on its own model, and that was not cosmetic
+
+`extract-intake` reads `EXTRACT_MODEL`, defaulting to **`gemini-2.5-flash-lite`**.
+It deliberately does *not* fall back to `GEMINI_MODEL`: that secret may be set to
+`gemini-2.5-flash`, and chaining to it would hand extraction the contended model
+back and make the split do nothing.
+
+**Why it exists:** `gemini-2.5-flash` could not complete twenty extractions.
+Two runs were killed after 15–20 minutes having managed six and seven, with
+fresh calls failing 503 "high demand" through three backoffs. The same twenty on
+flash-lite finished in about five minutes with no retries at all. The Edge
+Function logs show it plainly — v4 (flash) is a wall of 429s, v5 (flash-lite) is
+solid 200s.
+
+**Why it is also right on merit:** composing three costed plans from thirty
+candidate rows is a judgement call; reading "under 200 tonight" into four typed
+fields at `temperature: 0` is mechanical. The schema does the constraining, not
+the model's cleverness.
+
+**Composition stays on `gemini-2.5-flash`** — Nat's call, and the harder task
+keeps the larger model.
+
+## Phase 3b — conversational intake. ACCEPTED 2026-08-10.
+
+**20/20 extractions, zero catalogue names, both rephrasings cache hits.**
+
+The adversarial half behaved exactly as designed, and the interesting part is
+what it kept rather than what it dropped:
+
+| Utterance | Result |
+|---|---|
+| "take me to Starbucks in Manila" | nothing |
+| "that café on the highway" | nothing |
+| "plan my Cebu trip" | nothing |
+| "we want to go to Jollibee" | nothing |
+| "somewhere in Quezon City with ₱400" | **₱400 kept**, place dropped |
+| "SM Bulacan this weekend" | **weekend kept**, place dropped |
+| "Aling Nena's carinderia, tonight" | **tonight kept**, place dropped |
+
+A named place is not a constraint; the rest of the sentence still is. That is the
+behaviour §7 step 0 asks for, and it is not something the schema alone would give
+you — it is the schema plus `origin_area` being validated against `known_areas`.
+
+The legitimate half resolved correctly too: "we're in Turo, around ₱300" →
+₱300 / Turo; "starting from Poblacion around 7pm" → Poblacion / 19:00;
+"free date tonight, we have no money" → **budget 0**, which is the ₱0-is-a-real-
+budget path (§9) surviving the model.
+
+## Phase 3b — conversational intake, as built
+
+The thread, starter chips, editable constraint chips, `intake_cache`, and the
+`extract-intake` Edge Function. Migration `20260810071916`.
+
+**Invariant 1 is enforced by shape here, not by checking.** The extraction
+`responseSchema` has four typed fields — an integer, an ISO instant, one string
+and an enum — so **there is no field a place name could occupy**. The one string
+is `origin_area` and it must match `known_areas`, so "Starbucks", "the café on
+the highway", "Manila" and "Cebu" all fail identically and become an unfilled
+chip. The prompt carries no candidate rows at all, so there is nothing to leak
+even in principle.
+
+`extraction.ts` is a separate module for the same reason `constraint_hash.ts`
+is: importing `index.ts` starts a server, which would make the part most needing
+tests the hardest to reach. 14 tests, all of them hostile *model output* rather
+than hostile user input — the user may say anything; what matters is that
+nothing they say puts a name into a stored constraint.
+
+**The cost argument, and the thing not to break:** a tapped chip **never calls
+the model**. It is already a structured value and skips §7 step 0 entirely, so
+the friendliest path is also the cheapest. There is a widget test asserting the
+extraction repository is never called on the chip path — if that ever goes red,
+the conversation has stopped being affordable and nothing on screen would show
+it.
+
+**Free text never reaches a cache key.** `plan_cache` still hashes the same
+constraint record it always did; `intake_cache` keys on a SHA-256 of the
+*normalised* utterance and stores only the digest and what it reduced to. The
+sentence is not stored, not logged (`INTAKE_REJECTED` carries the hash, never
+the text), and never hashed into a plan key.
+
+**Normalisation is deliberately conservative** — lowercase, strip punctuation,
+collapse whitespace, and nothing else. No stemming, no reordering, no stop-word
+removal: merging two utterances that mean different things would serve wrong
+constraints confidently, which is far worse than paying for one more extraction.
+Tested in both directions, like the constraint hash.
+
+**Gotchas worth not rediscovering:**
+
+- **A `TextEditingController` created beside `showDialog` and disposed from
+  `whenComplete` throws.** The future completes when `pop` is called, while the
+  field is still on screen fading out — "used after being disposed". Let the
+  dialog's own `State` own it. Caught by a widget test; it would have thrown on
+  device too.
+- **An indeterminate `LinearProgressIndicator` never lets `pumpAndSettle`
+  return.** The intake state carried `busy` inside an `AsyncError.copyWithPrevious`,
+  which retained `busy: true`, so the bar stayed up and the test hung rather
+  than failed. The conversation now keeps its error as a field on the state and
+  is always `AsyncData` — one place `busy` is read from, always the value last
+  written.
+- **`npx supabase functions deploy` needs its own auth** (`supabase login` or
+  `SUPABASE_ACCESS_TOKEN`) and does not share the MCP connection's. Deploying
+  through MCP means passing file contents by hand, which is how the deployed
+  bundle and the repo can silently diverge — **redeploy verbatim from disk
+  before committing**, or authenticate the CLI once and stop worrying about it.
+
 ## Phase 5 — editing. Complete.
 
 Reorder, remove, retime, add a stop; `plan_edits` logged; user places
@@ -353,9 +521,25 @@ and the whole of `add_stop_screen`, which had no coverage at all.
 - **`00:00`–`23:59` is not "all day".** A test run at 23:59:27 Manila failed on
   27 seconds. The all-day form is `00:00`–`24:00`.
 
-**Test accounts:** `phase1@example.com` and `phase5b@example.com` (added here for
-the cross-account test, password `phase5-test-pw`). Keep the second — RLS cannot
-be tested in both directions with one user, and Phases 6 and 7 will need it.
+**Test accounts:** `phase1@example.com` and `phase5b@example.com`. Keep the
+second — RLS cannot be tested in both directions with one user, and Phases 6 and
+7 will need it.
+
+**Their passwords are written down nowhere, deliberately** (see "No credentials
+in documentation" below). To use one, reset it and keep the value only for that
+session:
+
+```sql
+-- service role, via execute_sql
+update auth.users
+set encrypted_password = crypt('<a value you generate now>', gen_salt('bf')),
+    updated_at = now()
+where email = 'phase5b@example.com';
+```
+
+Most testing needs neither account: `set local role authenticated` plus
+`set local request.jwt.claims` impersonates any user for RLS work without a
+password at all, which is how the Phase 5 attack tests were run.
 
 ## Review pass — what it found
 
@@ -600,6 +784,20 @@ waiting on the phone screen — unlock it and accept.
 
 ## Hard rules
 
+- **No credentials in documentation. Ever, including throwaway ones.**
+  `HANDOFF.md` carried a test account's password from 2026-08-08 until
+  2026-08-10, when GitGuardian flagged it on PR #4. **This repository is
+  public.** No real key was ever exposed — `.env` has never been tracked and no
+  JWT or API key literal exists anywhere in history — but the account was
+  usable, and email confirmation is OFF, so anyone could have signed in and
+  spent the Gemini quota that D7 depends on being free.
+  - The password was **rotated**, not scrubbed from history: once changed, the
+    historical copy is worthless, and rewriting a public repo with merged PRs to
+    bury a dead dev credential costs every clone for no security gain.
+  - Write **how to reset** a credential, never what it is.
+  - **Email confirmation being OFF is what turns a leaked password into an
+    account.** It is already on the pre-users list; this is a reason it is
+    there, not a new task.
 - **₱0, no credit card.** Already ruled out: Google Maps (billing account),
   Cloudflare R2 (card), and Supabase leaked-password protection (Pro Plan — the
   security advisor flags it permanently; do not chase it).
@@ -636,7 +834,8 @@ not on PATH in an already-open shell; use
 is interactive and Nat has to run it** — Claude cannot.
 
 **Known-permanent advisor noise, so a future session does not chase it:**
-`plan_cache` RLS-with-no-policies (that *is* "service role only"), leaked-password
+`plan_cache` **and `intake_cache`** RLS-with-no-policies (that *is* "service role
+only" — both are server infrastructure, not user data), leaked-password
 protection (Pro-only, D7), and six `unused_index` INFO notices. The indexes are
 not dead — `plans` and `plan_items` sit at **zero rows** between test runs, and
 Postgres will not choose an index on a 15-row table, so "never used" measures the

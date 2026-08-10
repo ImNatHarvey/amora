@@ -1,9 +1,11 @@
 import 'package:mobile/data/auth_repository.dart';
+import 'package:mobile/data/intake_repository.dart';
 import 'package:mobile/data/plans_repository.dart';
 import 'package:mobile/data/profiles_repository.dart';
 import 'package:mobile/data/resources_repository.dart';
 import 'package:mobile/data/retrieval_repository.dart';
 import 'package:mobile/models/activity.dart';
+import 'package:mobile/models/intake.dart';
 import 'package:mobile/models/profile.dart';
 import 'package:mobile/models/resource.dart';
 import 'package:mobile/models/saved_plan.dart';
@@ -286,4 +288,35 @@ class FakePlansRepository implements PlansRepository {
     String? title,
   }) async =>
       'saved-plan-id';
+}
+
+/// Records what was sent for extraction, and returns whatever the test says.
+///
+/// It does no parsing of its own. Reading language is Gemini's job and the
+/// server's validator decides what survives it; a fake that guessed at
+/// constraints would be testing the fake. What these tests check is **which
+/// paths call it at all** — the chip path must never appear in [calls], because
+/// that is the whole cost argument for §7 step 0.
+class FakeIntakeRepository implements IntakeRepository {
+  FakeIntakeRepository({this.returns, this.error});
+
+  /// Every utterance sent for extraction, in order. Empty is the assertion for
+  /// the chip path.
+  final List<String> calls = [];
+
+  final IntakeConstraints? returns;
+  final Object? error;
+
+  @override
+  Future<IntakeExtraction> extract({
+    required String utterance,
+    required String city,
+  }) async {
+    calls.add(utterance);
+    if (error != null) throw error!;
+    return IntakeExtraction(
+      constraints: returns ?? const IntakeConstraints(),
+      cacheHit: false,
+    );
+  }
 }
