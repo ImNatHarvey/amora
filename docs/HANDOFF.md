@@ -12,8 +12,12 @@ which criteria are outstanding and why.
 
 **Phase 5 is complete**, and it is the first phase since 1 whose acceptance
 criteria were actually *met* rather than deferred: nothing in editing needs a
-real place to be true. Only the device run is outstanding. **Next is Phase 3b
-(conversational intake)**, then Phase 6 — which ends the MVP.
+real place to be true. Only the device run is outstanding.
+
+**Phase 3b is built and awaiting one secret.** The conversation, the chips, the
+extraction function, `intake_cache` and the guard tests are all done and green.
+Its acceptance run is a command and it is **blocked on `GEMINI_API_KEY`** — see
+the ledger. **Next is Phase 6**, which ends the MVP.
 
 **All three are blocked on the same thing: real places.** The criterion is
 "real, currently-open places"; all 15 rows are still `test-*`. See "Seed data"
@@ -73,6 +77,17 @@ a phase.**
 | 4 | "a DIY activity plays its tutorial in-app" | one real `tutorial_url` — the **code is done**, see below |
 | 4 | on-device confirmation of the Phase 4 UI | Nat's phone was in use on 2026-08-08 |
 | 5 | on-device confirmation of drag-to-reorder | same phone. Both *written* criteria are met; this is the extra check §3 requires of every phase |
+| 3b | correct chips from a typed request; an `intake_cache` hit on a rephrasing; **zero place names across 20 utterances** | `GEMINI_API_KEY`. One command: `node supabase/functions/extract-intake/acceptance.mjs` |
+| 3b | on-device confirmation of the conversation | the phone |
+
+**The `GEMINI_API_KEY` row is now the most expensive one open.** It is free and
+takes two minutes, and it alone blocks *four* criteria across two phases —
+Phase 3's 20 generations and hand-recomputed totals, and Phase 3b's chips,
+cache hit and adversarial run. The adversarial run is the direct test of
+invariant 1 for the extraction path: **the only evidence that the model does
+not emit place names.** The unit tests prove nothing unsafe can get through even
+if it does, which is the stronger guarantee — but it is not the same claim, and
+both were specified.
 
 **Phase 5 is not in this ledger for its own criteria**, and that is the point:
 editing is true or false regardless of whether a place is real, so it could be
@@ -235,6 +250,63 @@ into `activities.csv`, re-import, and the criterion is met.
   — the user would save something other than what they were looking at.
 - **`plans.origin_area` exists because a reopened plan needs it.** The first leg
   starts at the origin, not at a stop.
+
+## Phase 3b — conversational intake. Built; acceptance needs the key.
+
+The thread, starter chips, editable constraint chips, `intake_cache`, and the
+`extract-intake` Edge Function. Migration `20260810071916`.
+
+**Invariant 1 is enforced by shape here, not by checking.** The extraction
+`responseSchema` has four typed fields — an integer, an ISO instant, one string
+and an enum — so **there is no field a place name could occupy**. The one string
+is `origin_area` and it must match `known_areas`, so "Starbucks", "the café on
+the highway", "Manila" and "Cebu" all fail identically and become an unfilled
+chip. The prompt carries no candidate rows at all, so there is nothing to leak
+even in principle.
+
+`extraction.ts` is a separate module for the same reason `constraint_hash.ts`
+is: importing `index.ts` starts a server, which would make the part most needing
+tests the hardest to reach. 14 tests, all of them hostile *model output* rather
+than hostile user input — the user may say anything; what matters is that
+nothing they say puts a name into a stored constraint.
+
+**The cost argument, and the thing not to break:** a tapped chip **never calls
+the model**. It is already a structured value and skips §7 step 0 entirely, so
+the friendliest path is also the cheapest. There is a widget test asserting the
+extraction repository is never called on the chip path — if that ever goes red,
+the conversation has stopped being affordable and nothing on screen would show
+it.
+
+**Free text never reaches a cache key.** `plan_cache` still hashes the same
+constraint record it always did; `intake_cache` keys on a SHA-256 of the
+*normalised* utterance and stores only the digest and what it reduced to. The
+sentence is not stored, not logged (`INTAKE_REJECTED` carries the hash, never
+the text), and never hashed into a plan key.
+
+**Normalisation is deliberately conservative** — lowercase, strip punctuation,
+collapse whitespace, and nothing else. No stemming, no reordering, no stop-word
+removal: merging two utterances that mean different things would serve wrong
+constraints confidently, which is far worse than paying for one more extraction.
+Tested in both directions, like the constraint hash.
+
+**Gotchas worth not rediscovering:**
+
+- **A `TextEditingController` created beside `showDialog` and disposed from
+  `whenComplete` throws.** The future completes when `pop` is called, while the
+  field is still on screen fading out — "used after being disposed". Let the
+  dialog's own `State` own it. Caught by a widget test; it would have thrown on
+  device too.
+- **An indeterminate `LinearProgressIndicator` never lets `pumpAndSettle`
+  return.** The intake state carried `busy` inside an `AsyncError.copyWithPrevious`,
+  which retained `busy: true`, so the bar stayed up and the test hung rather
+  than failed. The conversation now keeps its error as a field on the state and
+  is always `AsyncData` — one place `busy` is read from, always the value last
+  written.
+- **`npx supabase functions deploy` needs its own auth** (`supabase login` or
+  `SUPABASE_ACCESS_TOKEN`) and does not share the MCP connection's. Deploying
+  through MCP means passing file contents by hand, which is how the deployed
+  bundle and the repo can silently diverge — **redeploy verbatim from disk
+  before committing**, or authenticate the CLI once and stop worrying about it.
 
 ## Phase 5 — editing. Complete.
 
@@ -636,7 +708,8 @@ not on PATH in an already-open shell; use
 is interactive and Nat has to run it** — Claude cannot.
 
 **Known-permanent advisor noise, so a future session does not chase it:**
-`plan_cache` RLS-with-no-policies (that *is* "service role only"), leaked-password
+`plan_cache` **and `intake_cache`** RLS-with-no-policies (that *is* "service role
+only" — both are server infrastructure, not user data), leaked-password
 protection (Pro-only, D7), and six `unused_index` INFO notices. The indexes are
 not dead — `plans` and `plan_items` sit at **zero rows** between test runs, and
 Postgres will not choose an index on a 15-row table, so "never used" measures the

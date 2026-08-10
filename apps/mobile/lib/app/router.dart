@@ -8,6 +8,7 @@ import '../features/auth/sign_up_screen.dart';
 import '../features/dev/token_gallery_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/ideas/ideas_screen.dart';
+import '../features/intake/intake_screen.dart';
 import '../features/place/place_detail_screen.dart';
 import '../features/plan/add_stop_screen.dart';
 import '../features/plan/plan_detail_screen.dart';
@@ -24,8 +25,16 @@ abstract final class Routes {
   static const signUp = '/sign-up';
   static const onboardingProfile = '/onboarding/profile';
   static const onboardingResources = '/onboarding/resources';
+  /// The conversation — Phase 3b, and the intake as of D10. "Plan something"
+  /// on home leads here.
+  static const intake = '/intake';
+
   /// The structured intake — budget, origin, time. Renamed from `/plan` when
   /// Phase 4 needed that prefix for saved plans; it is the request, not a plan.
+  ///
+  /// Still reachable from the conversation, deliberately: it is the fallback
+  /// when extraction fails, and the only way to exercise retrieval with no
+  /// model in the loop.
   static const planRequest = '/plan-request';
   static const ideas = '/ideas';
 
@@ -145,6 +154,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       // already requires a session and finished onboarding to reach it — the
       // resource picker has to have run before retrieval can filter on what
       // the user owns.
+      GoRoute(
+        path: Routes.intake,
+        builder: (context, state) => const IntakeScreen(),
+      ),
       GoRoute(
         path: Routes.planRequest,
         builder: (context, state) => const PlanRequestScreen(),
