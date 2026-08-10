@@ -251,6 +251,43 @@ into `activities.csv`, re-import, and the criterion is met.
 - **`plans.origin_area` exists because a reopened plan needs it.** The first leg
   starts at the origin, not at a stop.
 
+## The Gemini free tier is 5 requests per minute. Measured, not assumed.
+
+The first Phase 3b acceptance run hit 429 and said so exactly:
+
+```
+quotaId:    GenerateRequestsPerMinutePerProjectPerModel-FreeTier
+quotaValue: 5
+model:      gemini-2.5-flash
+```
+
+**Five per minute, per project, per model.** §7 already warned the quota was
+"managed, not solved" at Phase 3b; this is the number.
+
+What it means for the product, since §7 says a new utterance costs **two** calls
+(extract, then compose):
+
+- **~2.5 new plan requests per minute across all users**, not per user.
+- A **tapped starter chip costs zero** — it skips extraction entirely. A
+  `plan_cache` hit costs zero. An `intake_cache` hit costs zero.
+- So the cache economics stop being a nicety and become the thing that makes the
+  product usable at all. Anything that weakens them — free text in a cache key,
+  a chip that calls the model — is a product-level regression, not a
+  tidiness issue.
+
+Two consequences already acted on:
+
+- **Both acceptance harnesses pace at 13s** (~4.6/min) and retry 429 and 503.
+  Unpaced, a run fails partway and reads as "the model got it wrong", which
+  sends you looking at the prompt instead of the clock.
+- **Both Edge Functions now pass an upstream status through** rather than
+  flattening it to 500. A caller could not previously distinguish "wait 30
+  seconds" from "this is broken" — and the acceptance harness's own retry never
+  fired because it was watching for a 429 that had already become a 500.
+
+**503 also happens** — Gemini reporting its own overload. Three of twenty on the
+first run. It is transient and retried, not a fault.
+
 ## Phase 3b — conversational intake. Built; acceptance needs the key.
 
 The thread, starter chips, editable constraint chips, `intake_cache`, and the
@@ -425,9 +462,25 @@ and the whole of `add_stop_screen`, which had no coverage at all.
 - **`00:00`–`23:59` is not "all day".** A test run at 23:59:27 Manila failed on
   27 seconds. The all-day form is `00:00`–`24:00`.
 
-**Test accounts:** `phase1@example.com` and `phase5b@example.com` (added here for
-the cross-account test, password `phase5-test-pw`). Keep the second — RLS cannot
-be tested in both directions with one user, and Phases 6 and 7 will need it.
+**Test accounts:** `phase1@example.com` and `phase5b@example.com`. Keep the
+second — RLS cannot be tested in both directions with one user, and Phases 6 and
+7 will need it.
+
+**Their passwords are written down nowhere, deliberately** (see "No credentials
+in documentation" below). To use one, reset it and keep the value only for that
+session:
+
+```sql
+-- service role, via execute_sql
+update auth.users
+set encrypted_password = crypt('<a value you generate now>', gen_salt('bf')),
+    updated_at = now()
+where email = 'phase5b@example.com';
+```
+
+Most testing needs neither account: `set local role authenticated` plus
+`set local request.jwt.claims` impersonates any user for RLS work without a
+password at all, which is how the Phase 5 attack tests were run.
 
 ## Review pass — what it found
 
@@ -672,6 +725,20 @@ waiting on the phone screen — unlock it and accept.
 
 ## Hard rules
 
+- **No credentials in documentation. Ever, including throwaway ones.**
+  `HANDOFF.md` carried a test account's password from 2026-08-08 until
+  2026-08-10, when GitGuardian flagged it on PR #4. **This repository is
+  public.** No real key was ever exposed — `.env` has never been tracked and no
+  JWT or API key literal exists anywhere in history — but the account was
+  usable, and email confirmation is OFF, so anyone could have signed in and
+  spent the Gemini quota that D7 depends on being free.
+  - The password was **rotated**, not scrubbed from history: once changed, the
+    historical copy is worthless, and rewriting a public repo with merged PRs to
+    bury a dead dev credential costs every clone for no security gain.
+  - Write **how to reset** a credential, never what it is.
+  - **Email confirmation being OFF is what turns a leaked password into an
+    account.** It is already on the pre-users list; this is a reason it is
+    there, not a new task.
 - **₱0, no credit card.** Already ruled out: Google Maps (billing account),
   Cloudflare R2 (card), and Supabase leaked-password protection (Pro Plan — the
   security advisor flags it permanently; do not chase it).

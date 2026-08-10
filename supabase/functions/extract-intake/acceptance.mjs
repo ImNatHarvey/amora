@@ -105,6 +105,37 @@ function stop(code, message) {
   return null;
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The free tier allows **5 requests per minute per model** — measured, not
+ * assumed: the first run of this script came back with
+ * `quotaValue: "5", quotaId: GenerateRequestsPerMinutePerProjectPerModel-FreeTier`.
+ *
+ * 13 seconds is ~4.6/minute, just inside it. A shorter gap starts returning 429
+ * partway through and the failure reads as "the model got it wrong" rather than
+ * "we asked too fast", which is the worst kind of test result because it sends
+ * you looking at the prompt.
+ *
+ * 503 is retried too. It is Gemini reporting its own overload, not a verdict on
+ * the request, and it hit three of twenty on the first run.
+ */
+const GAP_MS = 13000;
+
+async function throttled(call, label) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await sleep(GAP_MS);
+    const result = await call();
+    if (result.status !== 429 && result.status !== 503) return result;
+
+    console.log(
+      `    (${result.status} on "${label}" — backing off, attempt ${attempt + 1}/3)`,
+    );
+    await sleep(35000);
+  }
+  return call();
+}
+
 async function main() {
   const env = loadEnv();
   const fn = `${env.SUPABASE_URL}/functions/v1/extract-intake`;
@@ -162,14 +193,18 @@ async function main() {
   console.log(`  signed in as ${email}`);
 
   const extract = (utterance) =>
-    fetch(fn, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ utterance, city: 'Bocaue' }),
-    }).then(async (r) => ({ status: r.status, body: await r.json() }));
+    throttled(
+      () =>
+        fetch(fn, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ utterance, city: 'Bocaue' }),
+        }).then(async (r) => ({ status: r.status, body: await r.json() })),
+      utterance,
+    );
 
   const results = [];
   const leaks = [];

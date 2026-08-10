@@ -41,6 +41,24 @@ const CORS = {
 /** Long enough to say anything a date needs; short enough to bound the bill. */
 const MAX_UTTERANCE_CHARS = 500;
 
+/**
+ * A failure that came from Gemini rather than from us, carrying its status.
+ *
+ * Without this the handler's catch turns every upstream problem into a 500, and
+ * a caller cannot tell "you asked too fast, wait 30 seconds" from "something is
+ * broken". That distinction is not cosmetic on a free tier: the limit is **5
+ * requests per minute per model**, so 429 is an ordinary condition a client
+ * should expect and retry, not an error to report to the user.
+ *
+ * Found by the Phase 3b acceptance run, whose own retry logic never fired
+ * because it was watching for a 429 that had already been flattened to a 500.
+ */
+class UpstreamError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
 async function callGemini(prompt: string): Promise<unknown> {
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
@@ -64,12 +82,26 @@ async function callGemini(prompt: string): Promise<unknown> {
   if (!response.ok) {
     const body = await response.text();
     if (response.status === 404) {
-      throw new Error(
+      throw new UpstreamError(
+        404,
         `Gemini rejected model "${GEMINI_MODEL}" (404). Set the GEMINI_MODEL ` +
         `secret to a model available on your key. Body: ${body}`,
       );
     }
-    throw new Error(`Gemini ${response.status}: ${body}`);
+    if (response.status === 429) {
+      throw new UpstreamError(
+        429,
+        'Too many requests to the model just now. The free tier allows 5 per ' +
+        'minute; try again shortly.',
+      );
+    }
+    if (response.status === 503) {
+      throw new UpstreamError(
+        503,
+        'The model is busy right now. This is temporary — try again shortly.',
+      );
+    }
+    throw new UpstreamError(response.status, `Gemini ${response.status}: ${body}`);
   }
 
   const data = await response.json();
@@ -187,6 +219,12 @@ Deno.serve(async (request) => {
     return json({ constraints, cache_hit: false, rejected });
   } catch (error) {
     console.error('EXTRACT_FAILED', error instanceof Error ? error.message : String(error));
+
+    // Pass an upstream status through rather than flattening it to 500, so a
+    // caller can distinguish "wait and retry" from "this is broken".
+    if (error instanceof UpstreamError) {
+      return json({ error: error.message }, error.status);
+    }
     return json({
       error: error instanceof Error ? error.message : 'Extraction failed.',
     }, 500);
