@@ -28,10 +28,32 @@ import {
 } from './extraction.ts';
 
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY');
-// A secret rather than a constant, for the same reason generate-plan uses one:
-// model names change faster than deploys and D8 makes the model a config
-// choice. If Gemini answers 404, set this secret rather than editing this file.
-const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash';
+/**
+ * Extraction gets its **own** model, defaulting to a smaller one than
+ * composition uses.
+ *
+ * Two reasons, and the second is why the *default* differs rather than just the
+ * knob existing:
+ *
+ *   1. **They are different tasks.** Composing three costed plans from thirty
+ *      candidate rows is a judgement call. Reading "under 200 tonight" into
+ *      four typed fields at `temperature: 0` is mechanical — the schema does
+ *      the constraining, not the model's cleverness.
+ *   2. **`gemini-2.5-flash` is heavily contended on the free tier.** The Phase
+ *      3b acceptance run could not complete twenty extractions: fresh calls
+ *      kept returning 503 "high demand" through three backoffs, on top of the
+ *      five-requests-per-minute cap. `flash-lite` has a higher limit and far
+ *      less queueing.
+ *
+ * `EXTRACT_MODEL` overrides it. It deliberately does **not** fall back to
+ * `GEMINI_MODEL`: that secret may already be set to `gemini-2.5-flash`, and
+ * chaining to it would quietly hand extraction the contended model back and
+ * make this split do nothing. Two tasks, two settings, no shared default. D8
+ * makes the model a config choice; this makes it a per-task one.
+ *
+ * If Gemini answers 404, set `EXTRACT_MODEL` rather than editing this file.
+ */
+const GEMINI_MODEL = Deno.env.get('EXTRACT_MODEL') ?? 'gemini-2.5-flash-lite';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',

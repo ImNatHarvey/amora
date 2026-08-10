@@ -77,8 +77,19 @@ a phase.**
 | 4 | "a DIY activity plays its tutorial in-app" | one real `tutorial_url` — the **code is done**, see below |
 | 4 | on-device confirmation of the Phase 4 UI | Nat's phone was in use on 2026-08-08 |
 | 5 | on-device confirmation of drag-to-reorder | same phone. Both *written* criteria are met; this is the extra check §3 requires of every phase |
-| 3b | correct chips from a typed request; an `intake_cache` hit on a rephrasing; **zero place names across 20 utterances** | `GEMINI_API_KEY`. One command: `node supabase/functions/extract-intake/acceptance.mjs` |
 | 3b | on-device confirmation of the conversation | the phone |
+
+**Phase 3b's own criteria are MET as of 2026-08-10** — 20/20 extractions, zero
+catalogue names, both rephrasings cache hits, on `gemini-2.5-flash-lite`. Run
+`node supabase/functions/extract-intake/acceptance.mjs` to reproduce.
+
+**Phase 3's 20 generations are still open, and no longer for want of a key.**
+The run errored 11 of 20. Diagnosed, not guessed: the failures returned in
+~900 ms while successes take 20–30 s, and a sub-second failure is Gemini
+rejecting instantly with a 429 — which the **deployed** `generate-plan` still
+flattens to a 500, so the harness's retry never sees it. The fix is written in
+`generate-plan/index.ts` (the `UpstreamError` class) but **has not been
+deployed**. Deploy it, then re-run.
 
 **The `GEMINI_API_KEY` row is now the most expensive one open.** It is free and
 takes two minutes, and it alone blocks *four* criteria across two phases —
@@ -288,7 +299,55 @@ Two consequences already acted on:
 **503 also happens** — Gemini reporting its own overload. Three of twenty on the
 first run. It is transient and retried, not a fault.
 
-## Phase 3b — conversational intake. Built; acceptance needs the key.
+## Extraction runs on its own model, and that was not cosmetic
+
+`extract-intake` reads `EXTRACT_MODEL`, defaulting to **`gemini-2.5-flash-lite`**.
+It deliberately does *not* fall back to `GEMINI_MODEL`: that secret may be set to
+`gemini-2.5-flash`, and chaining to it would hand extraction the contended model
+back and make the split do nothing.
+
+**Why it exists:** `gemini-2.5-flash` could not complete twenty extractions.
+Two runs were killed after 15–20 minutes having managed six and seven, with
+fresh calls failing 503 "high demand" through three backoffs. The same twenty on
+flash-lite finished in about five minutes with no retries at all. The Edge
+Function logs show it plainly — v4 (flash) is a wall of 429s, v5 (flash-lite) is
+solid 200s.
+
+**Why it is also right on merit:** composing three costed plans from thirty
+candidate rows is a judgement call; reading "under 200 tonight" into four typed
+fields at `temperature: 0` is mechanical. The schema does the constraining, not
+the model's cleverness.
+
+**Composition stays on `gemini-2.5-flash`** — Nat's call, and the harder task
+keeps the larger model.
+
+## Phase 3b — conversational intake. ACCEPTED 2026-08-10.
+
+**20/20 extractions, zero catalogue names, both rephrasings cache hits.**
+
+The adversarial half behaved exactly as designed, and the interesting part is
+what it kept rather than what it dropped:
+
+| Utterance | Result |
+|---|---|
+| "take me to Starbucks in Manila" | nothing |
+| "that café on the highway" | nothing |
+| "plan my Cebu trip" | nothing |
+| "we want to go to Jollibee" | nothing |
+| "somewhere in Quezon City with ₱400" | **₱400 kept**, place dropped |
+| "SM Bulacan this weekend" | **weekend kept**, place dropped |
+| "Aling Nena's carinderia, tonight" | **tonight kept**, place dropped |
+
+A named place is not a constraint; the rest of the sentence still is. That is the
+behaviour §7 step 0 asks for, and it is not something the schema alone would give
+you — it is the schema plus `origin_area` being validated against `known_areas`.
+
+The legitimate half resolved correctly too: "we're in Turo, around ₱300" →
+₱300 / Turo; "starting from Poblacion around 7pm" → Poblacion / 19:00;
+"free date tonight, we have no money" → **budget 0**, which is the ₱0-is-a-real-
+budget path (§9) surviving the model.
+
+## Phase 3b — conversational intake, as built
 
 The thread, starter chips, editable constraint chips, `intake_cache`, and the
 `extract-intake` Edge Function. Migration `20260810071916`.

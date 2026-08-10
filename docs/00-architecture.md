@@ -849,7 +849,7 @@ independent SQL recomputation exactly; second identical request is a cache hit.
 > fixed, boring input before anything is asked of language understanding — if a
 > plan comes back wrong here, it is the pipeline, and there is no second suspect.
 
-**Phase 3b — Conversational intake — ⚠️ BUILT, AWAITING THE API KEY**
+**Phase 3b — Conversational intake — ✅ ACCEPTED (device run outstanding)**
 Extraction Edge Function (§7 step 0), intake validation, `intake_cache`, and the
 chat UI: starter chips, a message thread, and editable constraint chips.
 *Accept:* a typed request produces correct chips; correcting a chip re-plans;
@@ -882,10 +882,25 @@ adversarial ones ("take me to Starbucks in Manila").
 > because if it ever were, the conversation would stop being affordable with
 > nothing on screen to show it.
 >
-> **What is outstanding is `GEMINI_API_KEY`**, which blocks three of the four
-> criteria. The unit tests prove nothing unsafe survives even a misbehaving
-> model; the 20-utterance run proves the model behaves. Both were specified and
-> they are not the same claim.
+> **Accepted 2026-08-10: 20/20 extractions, zero catalogue names, both
+> rephrasings cache hits.** The adversarial cases dropped the place and kept
+> everything else — "somewhere in Quezon City with ₱400" yielded ₱400 and no
+> origin, "SM Bulacan this weekend" yielded the weekend and no origin. A named
+> place is not a constraint; the rest of the sentence still is.
+>
+> **Extraction runs on its own model** (`EXTRACT_MODEL`, defaulting to
+> `gemini-2.5-flash-lite`) and composition stays on `gemini-2.5-flash`. Two
+> reasons: `flash` was too contended on the free tier to finish twenty
+> extractions at all, and the tasks genuinely differ — composing costed plans
+> from thirty candidate rows is judgement, reading a sentence into four typed
+> fields at `temperature: 0` is mechanical.
+>
+> **The free tier allows 5 requests per minute per model**, measured from the
+> 429 body rather than assumed. Since a new utterance costs two calls, that is
+> roughly 2.5 new plan requests per minute across all users — which is what
+> turns the cache economics from a nicety into the thing that makes the product
+> usable, and why a chip that skipped the cache would be a product regression
+> rather than untidiness.
 
 **Phase 4 — Plan experience — ⚠️ CODE COMPLETE, AWAITING DATA AND A DEVICE RUN**
 `flutter_map` with numbered stops, dashed walk legs, solid ride legs, per-leg fares,

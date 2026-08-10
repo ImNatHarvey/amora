@@ -121,17 +121,35 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * the request, and it hit three of twenty on the first run.
  */
 const GAP_MS = 13000;
+const BACKOFF_MS = 35000;
+
+/**
+ * True when the previous call actually spent a model request.
+ *
+ * **This is what makes the run resumable.** `intake_cache` persists, so a
+ * second run answers already-seen utterances without touching Gemini — and
+ * pausing 13 seconds before a lookup that costs nothing would make a mostly
+ * cached run take as long as a fresh one. Pacing follows the model, not the
+ * loop.
+ *
+ * That matters because a full fresh run does not fit in one sitting when Gemini
+ * is returning 503s: the first attempt was killed at 6 of 20. Re-running picks
+ * up where it left off, and each pass is cheaper than the last.
+ */
+let lastSpentACall = false;
 
 async function throttled(call, label) {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await sleep(GAP_MS);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    if (lastSpentACall) await sleep(GAP_MS);
+
     const result = await call();
+    lastSpentACall = result.body?.cache_hit !== true;
+
     if (result.status !== 429 && result.status !== 503) return result;
 
-    console.log(
-      `    (${result.status} on "${label}" — backing off, attempt ${attempt + 1}/3)`,
-    );
-    await sleep(35000);
+    console.log(`    (${result.status} on "${label}" — backing off, ${attempt}/3)`);
+    lastSpentACall = true;
+    await sleep(BACKOFF_MS);
   }
   return call();
 }
@@ -226,6 +244,14 @@ async function main() {
     }
 
     results.push({ utterance, ...body });
+
+    // Written after every utterance, not once at the end. Node buffers stdout
+    // when it is not a terminal, so a run that gets killed prints nothing at
+    // all — the first long attempt left a 0-byte log and 20 minutes of work
+    // recoverable only from the database. The file is the durable record.
+    mkdirSync(OUT_DIR, { recursive: true });
+    writeFileSync(join(OUT_DIR, 'extract-intake.json'), JSON.stringify(results, null, 2));
+
     const c = body.constraints;
     console.log(
       `  ${utterance.padEnd(42).slice(0, 42)} → ` +
