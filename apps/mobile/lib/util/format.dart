@@ -30,6 +30,40 @@ String pesos(int cents, {bool zeroIsFree = true}) {
       : '₱$whole.${remainder.toString().padLeft(2, '0')}';
 }
 
+/// What a person typed into a money field, as integer centavos. Null when they
+/// typed nothing usable.
+///
+/// The inverse of [pesos], and deliberately next to it so the round trip can be
+/// tested in one place. Phase 6 is the first time the app takes money *in* rather
+/// than only printing it, and a parser living inside whichever widget needed it
+/// first is how the `_pesos` duplication started.
+///
+/// This is not the device doing arithmetic on money (invariant 3): it converts
+/// one typed value into the unit the column uses. Every sum, fare and total is
+/// still computed in Postgres from database rows — `complete_plan` derives the
+/// plan's actual spend, and this function never adds two figures together.
+///
+/// Null rather than 0 for unusable input, because the difference carries meaning
+/// all the way to the database: null means "we did not record what this cost"
+/// and 0 means "this was free". Collapsing them would file every skipped field
+/// as evidence that a place costs nothing.
+int? centavosFromPesoText(String? text) {
+  if (text == null) return null;
+
+  // Tolerate what people actually type: a peso sign, thousands separators, and
+  // stray spaces. Rejecting "₱1,200" as unparseable would be technically
+  // defensible and would silently drop a real figure.
+  final cleaned = text.replaceAll(RegExp(r'[₱,\s]'), '');
+  if (cleaned.isEmpty) return null;
+
+  final pesosValue = double.tryParse(cleaned);
+  // Negative spending is not a thing, and NaN would round to an integer that is
+  // not one.
+  if (pesosValue == null || pesosValue.isNaN || pesosValue < 0) return null;
+
+  return (pesosValue * 100).round();
+}
+
 /// `450 m`, or `1.2 km` past a kilometre.
 ///
 /// Distances are stored as integer metres. Sub-kilometre precision matters

@@ -9,6 +9,7 @@ import '../features/dev/token_gallery_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/ideas/ideas_screen.dart';
 import '../features/intake/intake_screen.dart';
+import '../features/memory/memory_timeline_screen.dart';
 import '../features/place/place_detail_screen.dart';
 import '../features/plan/add_stop_screen.dart';
 import '../features/plan/plan_detail_screen.dart';
@@ -44,6 +45,9 @@ abstract final class Routes {
 
   /// Place detail at `/place/:id`.
   static const place = '/place';
+
+  /// What actually happened — Phase 6's timeline of completed outings.
+  static const memories = '/memories';
 
   static const devTokens = '/dev/tokens';
 }
@@ -188,6 +192,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '${Routes.place}/:id',
         builder: (context, state) =>
             PlaceDetailScreen(placeId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: Routes.memories,
+        builder: (context, state) => const MemoryTimelineScreen(),
       ),
       // Same gate as /plan: the resource picker has to have run before either
       // screen can filter on what the user owns.

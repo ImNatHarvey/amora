@@ -2,26 +2,44 @@
 
 Context bridge for fresh sessions. Everything structural lives in
 `00-architecture.md` and `02-design-system.md` — this file is only what those
-don't say. Last updated for the Phase 4 close-out commit.
+don't say. Last updated for the Phase 6 commit.
 
 ## Where we are
 
+**Every phase of the MVP is now built.** Phase 6 was the last one, and there is
+no more code to write before the app is usable end to end. What stands between
+here and a shippable MVP is **data and a phone**, not development.
+
 Phases 0 and 1 are complete and accepted on device. **Phases 2, 3 and 4 are code
 complete and none of the three is accepted** — see the ledger below for exactly
-which criteria are outstanding and why.
+which criteria are outstanding and why. Phase 3b was **accepted 2026-08-10**.
 
 **Phase 5 is complete**, and it is the first phase since 1 whose acceptance
 criteria were actually *met* rather than deferred: nothing in editing needs a
 real place to be true. Only the device run is outstanding.
 
-**Phase 3b is built and awaiting one secret.** The conversation, the chips, the
-extraction function, `intake_cache` and the guard tests are all done and green.
-Its acceptance run is a command and it is **blocked on `GEMINI_API_KEY`** — see
-the ledger. **Next is Phase 6**, which ends the MVP.
+**Phase 6 is code complete and both its written criteria are met in SQL** —
+a two-stop plan completed to one memory and exactly two reports, and a closure
+was accepted with no plan at all. Only the device run is outstanding. See
+"Phase 6" below, and note the per-person division: it is the one line in this
+phase that would have been wrong plausibly and silently.
 
-**All three are blocked on the same thing: real places.** The criterion is
-"real, currently-open places"; all 15 rows are still `test-*`. See "Seed data"
+**The honest next action is `supabase/seed/DESK-CHECKLIST.md`.** Not more code —
+there is none left in the MVP — and not Phase 6b either, which is gated on report
+volume that single-digit users will take months to produce. The seed is the entire
+product for the whole MVP window (§10.5).
+
+**Phases 2, 3 and 4 are blocked on the same thing: real places.** The criterion
+is "real, currently-open places"; all 15 rows are still `test-*`. See "Seed data"
 below. Nothing else blocks Phase 2 at all.
+
+**A device run is owed and it now covers four phases.** Wireless debugging was
+off on 2026-08-12 (Samsung drops it on every reboot — the ladder is under "Test
+device"), so nothing since Phase 2's verification has been seen on hardware. One
+session with the phone on clears Phase 3b's conversation, Phase 4's UI and DIY
+tutorial, Phase 5's drag-to-reorder, and Phase 6's completion sheet. Three of the
+bugs this project has shipped were invisible to every widget test and obvious in
+the first ten seconds on the phone.
 
 > **Nat decided on 2026-08-08 to build every remaining phase first and collect
 > the data at the end**, having been told the risk and asked again. Recorded so
@@ -52,11 +70,11 @@ that works; "Plan something" is still there and still needs the catalogue. Detai
 in `00-architecture.md` §8 under Phase 2 — including the line it must not cross,
 which is that Ideas answers *what* and never *where*.
 
-**A device run is owed.** Nothing since the Phase 2 verification has been seen on
-hardware — that now covers all of Phase 4's UI plus the DIY tutorial. Check
-`/ideas`, `/plan-request`, a saved plan and `/dev/tokens` in dark mode at 1.3×
-font scale. Three of the bugs this project has shipped were invisible to every
-widget test and obvious in the first ten seconds on the phone.
+**What to check when the phone is back on**, in one pass, dark mode at 1.3× font
+scale: `/ideas`, `/plan-request`, the `/intake` conversation, a saved plan
+(drag-to-reorder, the clock, ✕, "Add a stop"), **"We did this" through to a photo
+and a spend figure**, `/memories`, and `/dev/tokens`. That is four phases' worth of
+outstanding device confirmation in one sitting.
 
 ## Deferred acceptance criteria — the ledger
 
@@ -78,6 +96,7 @@ a phase.**
 | 4 | on-device confirmation of the Phase 4 UI | Nat's phone was in use on 2026-08-08 |
 | 5 | on-device confirmation of drag-to-reorder | same phone. Both *written* criteria are met; this is the extra check §3 requires of every phase |
 | 3b | on-device confirmation of the conversation | the phone |
+| 6 | on-device confirmation of the completion sheet, **and the compressed photo's actual byte size** | the phone. Both *written* criteria are met in SQL; the photo size is the one fact no test can supply, because `image_picker` compresses in native code that `flutter test` does not run |
 
 **Phase 3b's own criteria are MET as of 2026-08-10** — 20/20 extractions, zero
 catalogue names, both rephrasings cache hits, on `gemini-2.5-flash-lite`. Run
@@ -403,6 +422,101 @@ Tested in both directions, like the constraint hash.
   through MCP means passing file contents by hand, which is how the deployed
   bundle and the repo can silently diverge — **redeploy verbatim from disk
   before committing**, or authenticate the CLI once and stop worrying about it.
+
+## Phase 6 — completion & actuals. Code complete 2026-08-12.
+
+Five migrations (`20260812095046`, `095154`, `095231`, `095556`, `101500`), one
+repository, one sheet, one timeline screen. **No new dependency** —
+`image_picker` was already installed and compresses natively, so
+`flutter_image_compress` and its Kotlin Gradle Plugin stay out; the §8 note asking
+for a check before re-adding it is answered "not needed".
+
+**The per-person division is the thing to not break.** The sheet asks what the
+*party* handed over; `complete_plan` divides by `plans.party_size` before storing
+`place_reports.reported_cost_php_cents`, because 6b takes a median against
+`places.price_min_php_cents`, which is per person (§9). Verified end to end: ₱400
+party → ₱200 stored → 11% divergence from the seeded ₱180, which 6b correctly
+leaves alone. **Store the party figure and every median doubles**, looking
+entirely plausible. There is an explicit SQL assertion for exactly this, and a
+widget test asserting the *screen* does not divide either — the bug that survives
+both would be dividing twice.
+
+**Three things a widget test cannot see, so they were verified in SQL as service
+role:**
+
+| Check | Result |
+|---|---|
+| one report per stop, cost stored per person | 2 stops → 2 reports, ₱200 and ₱225 |
+| plan total derived, recomputed by hand | ₱975.01 = 400 + 450.01 + 35 + 90 |
+| a completion of an already-completed plan | refused |
+| `edit_plan` on a completed plan | refused |
+| a stop or leg `seq` the plan does not have | refused, and so is an entry with **no** `seq` key |
+| deleting or rewriting a report | `permission denied` |
+| a second user reading/planting a memory or report | refused, five ways |
+| uploading into another user's folder, or the bucket root | refused |
+| **a closure with no plan at all** | **accepted — this must never require one** |
+
+Each refusal was checked **as service role afterwards** to confirm the rows it
+could not see really exist. A check run as the attacker cannot tell "blocked"
+from "succeeded but invisible to me", which nearly produced two false passes in
+Phase 5.
+
+**"Active" had to be given a meaning.** §8 says a closure is reportable from an
+*active* plan, and nothing in the codebase has ever set `status = 'active'` —
+every saved plan is a `draft`. Decided: **active means saved and not yet
+completed.** A `draft → active` transition was considered and rejected, because a
+"we're heading out" tap the user can skip would silently block the one signal
+§10.2 says we are structurally short of. `'active'` stays an unused enum value.
+
+**Found by assertion, not by reading: `grant select, insert` is a no-op.**
+Supabase ships `alter default privileges in schema public grant all on tables to
+anon, authenticated`, so every new `public` table arrives with DELETE, UPDATE and
+TRUNCATE already granted. The first Phase 6 migration claimed "no update or delete
+grant" and did not have one. RLS held — a delete removed zero rows — but the
+refusal was **silent** and the second layer was fiction. Migration `101500`
+revokes properly, so it now errors.
+
+> **`plan_edits` has the identical defect and is deliberately untouched.** Same
+> blanket grants, same claim in its own comment, same RLS protecting it, so it is
+> not a live hole. It is Phase 5's file and CLAUDE.md says flag rather than reach
+> outside the phase. **One line when someone wants it:**
+> `revoke update, delete, truncate on public.plan_edits from anon, authenticated;`
+
+**Gotchas worth not rediscovering:**
+
+- **A missing key defeats a range check silently.** `(e ->> 'seq')::integer not
+  between 1 and n` is NULL when the key is absent, and NULL is not true — so an
+  entry with no `seq` passed validation and then matched no stop, losing a figure
+  the user had typed. Both conditions are now tested, and there is an assertion
+  for the no-key case specifically.
+- **A prefilled field submitted untouched is recorded as observed.** Known and
+  accepted: the user *was* there, and it is conservative in the only direction
+  that matters, since §10.5 needs >20% divergence to override. Confirmations pull
+  the median toward the seed and can never invent a wrong price.
+- **`cached_network_image` must be given `cacheKey: photoPath`.** The bucket is
+  private so every read is a signed URL that expires; the cache keys on the URL
+  by default, which would re-download every photo on every scroll while looking
+  exactly like a working cache.
+- **The completion sheet's controllers belong to its `State`**, not to the code
+  calling `showModalBottomSheet` — the Phase 3b dialog gotcha, same shape.
+- **A widget test viewport is 800 px tall**, so the sheet's money fields did not
+  exist to tap until `tester.view.physicalSize` was raised. Same fix as
+  `add_stop_screen`, same reason not to scroll instead.
+- **An unpriced leg gets an empty field, not no field.** It is the highest-value
+  input on the sheet: `transit_fares` has no row for that barangay pair, and the
+  couple who just paid it is the only source that will ever exist (D5).
+- **`memories.plan_id` is unique** so a double completion cannot duplicate the
+  reports beside it. 6b takes a median over those, so a double tap would move a
+  price further than §10.5's anti-gaming rules intend to allow.
+
+**Left for Phase 6b, deliberately:** every rule in §10.5 that *reads* a report —
+the median, the 20% threshold, the closure quarantine, the 30-day caps, the
+provenance labels. Phase 6 writes the corpus; nothing reads it yet.
+
+**One assertion plan is still in the database** (`PHASE6 ASSERTION PLAN`, on
+`phase1@example.com`), completed, with a memory and two reports. Left on purpose:
+it is a rendering fixture for the device run. Delete it afterwards if you want a
+clean timeline.
 
 ## Phase 5 — editing. Complete.
 
@@ -882,6 +996,38 @@ supposed to answer this, and it did:
   within 800 m of the origin means no fare is ever looked up. Target **at least
   3 barangays, max ~5 places in any one** — suggested split Poblacion 5, Turo 4,
   Bunlo 3, Lolomboy 3. All six pairs among those four already have fare rows.
+
+### The Google Form — decided 2026-08-12, and what it can and cannot produce
+
+Nat intends to collect leads by **asking friends about their own dating
+experiences via a Google Form**, then converting the answers to a readable
+format, once every phase is built. That time has now arrived.
+
+**Form answers are candidates, never rows.** They go in
+`supabase/seed/candidates/`, whose columns are deliberately incompatible with
+`places.csv` — pasting them across exits 1 on `assertHeaders`, which is the
+guard. §10.4: a candidate is promoted **by a visit or by a phone call**, and a
+resident's own knowledge counts only for facts that do not move. "It was around
+₱200 last month" cannot be dated honestly, and a price is exactly the fact whose
+staleness breaks a promise in public.
+
+**It is nonetheless the best candidate source available**, and better than web
+search on the axis that matters: search agreement measures who copied whom, while
+a friend who went there is first-hand. It should be sized accordingly — a wide
+form to a dozen friends is a morning's work and could produce more real leads
+than the whole candidates folder currently holds.
+
+**What it can fill directly is `place_notes`.** A note is a dated subjective
+observation carrying a `source_label`, not a decaying fact — "no lift to the
+second floor", "gets loud after 8pm", "the corner table is the good one". That is
+precisely what a phone call cannot reach (see the note above), and it is the layer
+D2 leans on to replace the Reddit tab. **Ask for these explicitly**; they are the
+form's highest-value output, not a by-product.
+
+Practical shape, so the conversion is not painful: ask for one place per response,
+with the barangay, roughly what two people spent, when they last went, and one
+sentence of what it is actually like. The first three become a candidate row to
+phone; the last becomes a `place_note` once the place is curated.
 
 **`supabase/seed/DESK-CHECKLIST.md` is where collection starts now.**
 `FIELD-CHECKLIST.md` remains the phone-friendly capture list for rows a desk cannot

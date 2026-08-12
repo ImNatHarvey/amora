@@ -9,6 +9,7 @@ import '../../theme/app_tokens.dart';
 import '../../ui/error_retry.dart';
 import '../../util/format.dart';
 import '../../util/manila_time.dart';
+import '../memory/report_closure_dialog.dart';
 
 /// What we actually know about one place.
 ///
@@ -154,6 +155,21 @@ class _PlaceView extends ConsumerWidget {
                     for (final note in list) _NoteBlock(note: note),
                   ],
                 ),
+        ),
+
+        SizedBox(height: tokens.lg),
+        // Reachable from a place on its own, with no plan involved. `place_reports`
+        // permits a closure report with a null plan precisely so this can exist:
+        // somebody who walks past a shuttered café should be able to say so
+        // without first building an itinerary around it (§10.5).
+        ReportClosureButton(
+          label: 'This place was closed',
+          onPressed: () => reportClosureFor(
+            context: context,
+            ref: ref,
+            placeId: place.id,
+            placeName: place.name,
+          ),
         ),
       ],
     );

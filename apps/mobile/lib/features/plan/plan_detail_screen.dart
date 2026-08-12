@@ -3,11 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
+import '../../models/memory.dart';
 import '../../models/simple_plan.dart';
 import '../../theme/app_tokens.dart';
 import '../../ui/error_retry.dart';
 import '../../util/format.dart';
 import '../../util/manila_time.dart';
+import '../memory/complete_plan_sheet.dart';
+import '../memory/memory_providers.dart';
+import '../memory/report_closure_dialog.dart';
 import 'plan_map.dart';
 import 'plan_providers.dart';
 import 'plan_timeline.dart';
@@ -128,6 +132,13 @@ class PlanDetailScreen extends ConsumerWidget {
             final plan = savedPlan.plan;
             final plannedFor = toManila(plan.plannedForUtc);
 
+            // Completion is the one state change that closes this screen's
+            // editing off. Every edit affordance below is gated on it, and so is
+            // the server: `edit_plan` refuses a completed plan, because its
+            // place_reports describe the stop list it has and 6b will read them.
+            final done = savedPlan.status == 'completed';
+            final memory = ref.watch(memoryForPlanProvider(planId));
+
             return ListView(
               padding: EdgeInsets.all(tokens.md),
               children: [
@@ -149,23 +160,36 @@ class PlanDetailScreen extends ConsumerWidget {
                   plan: plan,
                   onStopTap: (stop) =>
                       context.push('${Routes.place}/${stop.place.id}'),
-                  onReorder: (oldIndex, newIndex) => ref
-                      .read(savedPlanProvider(planId).notifier)
-                      .reorder(oldIndex, newIndex),
-                  onRemove: (stop) => _removeWithUndo(context, ref, stop, plan),
-                  onRetime: (stop) => _retime(context, ref, stop, plan),
+                  // All three null once the plan is done, which is what makes
+                  // PlanTimeline render its read-only form — the same form the
+                  // request screen has always used. No new mode was needed.
+                  onReorder: done
+                      ? null
+                      : (oldIndex, newIndex) => ref
+                          .read(savedPlanProvider(planId).notifier)
+                          .reorder(oldIndex, newIndex),
+                  onRemove: done
+                      ? null
+                      : (stop) => _removeWithUndo(context, ref, stop, plan),
+                  onRetime:
+                      done ? null : (stop) => _retime(context, ref, stop, plan),
                 ),
                 SizedBox(height: tokens.sm),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add a stop'),
-                  onPressed: () =>
-                      context.push('${Routes.plan}/$planId/add-stop'),
-                ),
+                if (!done)
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add a stop'),
+                    onPressed: () =>
+                        context.push('${Routes.plan}/$planId/add-stop'),
+                  ),
                 PlanCostSummary(
                   totals: plan.totals,
                   budgetPhpCents: plan.budgetPhpCents,
                 ),
+                if (done)
+                  _CompletedBlock(memory: memory)
+                else
+                  _StillToGoBlock(planId: planId, plan: plan),
                 if (savedPlan.generatedByModel != null) ...[
                   SizedBox(height: tokens.lg),
                   Text(
@@ -179,6 +203,112 @@ class PlanDetailScreen extends ConsumerWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+/// The two things you can do to a plan you have not finished yet.
+///
+/// Marking it done is the primary action; reporting a closure is the one that
+/// must not need it. §10.5's asymmetry made concrete in two buttons: the couple
+/// who found a locked door will never press the first, and theirs is the report
+/// worth the most.
+class _StillToGoBlock extends ConsumerWidget {
+  const _StillToGoBlock({required this.planId, required this.plan});
+
+  final String planId;
+  final SimplePlan plan;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = Theme.of(context).tokens;
+
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FilledButton.icon(
+            icon: const Icon(Icons.check),
+            label: const Text('We did this'),
+            onPressed: plan.stops.isEmpty
+                // A plan with no stops has nothing to report and no evening to
+                // remember. Disabled rather than hidden, so the action stays
+                // where the user learned it is.
+                ? null
+                : () => showCompletePlanSheet(
+                      context: context,
+                      planId: planId,
+                      plan: plan,
+                    ),
+          ),
+          ReportClosureButton(
+            onPressed: () => showReportClosureDialog(
+              context: context,
+              ref: ref,
+              planId: planId,
+              plan: plan,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What was recorded, once the outing is over.
+///
+/// [memory] is null while the timeline query has not loaded — the plan's own
+/// status already says it is complete, so the screen states that much and fills
+/// the rest in when it arrives. Waiting on a spinner here would hide a finished
+/// plan behind a loading state for data that only decorates it.
+class _CompletedBlock extends StatelessWidget {
+  const _CompletedBlock({required this.memory});
+
+  final Memory? memory;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.tokens;
+    final spend = memory?.actualSpendPhpCents;
+
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(),
+          SizedBox(height: tokens.sm),
+          Row(
+            children: [
+              Icon(Icons.check_circle, color: theme.colorScheme.primary),
+              SizedBox(width: tokens.sm),
+              Text('You did this', style: theme.textTheme.titleMedium),
+            ],
+          ),
+          if (spend != null) ...[
+            SizedBox(height: tokens.sm),
+            Text(
+              // The estimate is still on screen above, so this is the honest
+              // comparison the whole phase exists to make possible.
+              'It actually cost ${pesos(spend)}.',
+              style: theme.textTheme.bodyLarge,
+            ),
+          ],
+          if (memory?.caption != null) ...[
+            SizedBox(height: tokens.xs),
+            Text(memory!.caption!, style: theme.textTheme.bodyMedium),
+          ],
+          SizedBox(height: tokens.xs),
+          Text(
+            'This plan is no longer editable — what you reported describes the '
+            'stops it has.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
       ),
     );
   }

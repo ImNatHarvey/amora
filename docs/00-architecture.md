@@ -1043,7 +1043,7 @@ user-added place does not appear in another account's generated plans.
 > outside Bocaue permanently uneditable on the day coverage expands. One
 > `plan_city()` now.
 
-**Phase 6 — Completion & actuals**
+**Phase 6 — Completion & actuals — ⚠️ CODE COMPLETE, AWAITING A DEVICE RUN**
 Mark complete. Photo (compressed to ~150 KB), caption, actual spend, actual fare,
 rating. Writes a `memory`, **one `place_report` per stop**, and
 `plan_legs.actual_fare_php_cents`. Memory timeline screen.
@@ -1068,6 +1068,84 @@ rating. Writes a `memory`, **one `place_report` per stop**, and
 > it has migrated to Built-in Kotlin, and picking an alternative if not.
 *Accept:* completing a plan produces a memory and one report per stop, and a
 closure can be reported from an active plan without completing it.
+
+> **Both written criteria are met, verified in SQL against the live database.** A
+> two-stop plan completed to one `memories` row and exactly two `place_reports`,
+> and a closure was accepted with **no plan at all** — the §10.5 path. The device
+> run is outstanding and is the only thing between this and accepted.
+>
+> **`reported_cost_php_cents` is PER PERSON, and that division is the sharpest
+> edge in the phase.** `plan_items.est_cost_php_cents` is a party total
+> (`write_plan_stops` multiplies by `party_size`), but the column 6b takes a
+> median *against* is `places.price_min_php_cents`, which §9 defines as what one
+> person spends. So the sheet asks for the party figure — the only number a human
+> knows — and `complete_plan` divides by `plans.party_size` before storing a
+> report. Verified: ₱400 for two became a stored ₱200 against a seeded ₱180, an
+> 11% divergence that 6b correctly would *not* override. Stored as the party
+> figure it would have read as 122% divergence and 6b would have "corrected" a
+> correct price to double, plausibly and silently.
+>
+> **The plan total is derived, not asked.** `memories.actual_spend_php_cents` is
+> summed server-side from the per-stop figures plus the fares actually paid
+> (invariant 3) — the user is never asked for a total they have already given
+> stop by stop. Verified by hand: ₱400 + ₱450.01 + ₱35 corrected fare + ₱90 fare
+> left to fall back to its computed value = ₱975.01, which is what was stored.
+> **Null when no stop figure was recorded at all**, rather than a fares-only
+> number: "we do not know what this cost" is honest, and ₱90 of tricycle
+> presented as the cost of a date is not.
+>
+> **"Active" means saved and not yet completed.** Nothing in the codebase ever
+> set `status = 'active'` — every saved plan is a `draft` — so the criterion's
+> word had to be given a meaning. A `draft → active` transition was rejected:
+> §10.5 requires closure reports to be the *low*-friction path, and a "we're
+> heading out" tap that the user may simply skip would silently block the one
+> signal §10.2 says we are structurally short of. `'active'` remains an unused
+> value in the `status` check constraint.
+>
+> **Completion locks editing.** `edit_plan` refuses a completed plan and the
+> detail screen drops all four Phase 5 affordances, because a plan's
+> `place_reports` describe the stop list they were written against — an edit
+> afterwards would leave a price report nudging the median of a café the plan no
+> longer visits. Both halves verified: the SQL refusal, and a widget test that
+> the drag handle, ✕, clock and "Add a stop" are all gone.
+>
+> **No new dependency.** `image_picker` was already installed and resizes and
+> re-encodes natively via `maxWidth`/`imageQuality`, so `flutter_image_compress`
+> and its Kotlin Gradle Plugin stay out of the build — the note above asked for a
+> check before re-adding it, and the answer is that it is not needed. The bucket
+> carries a 2 MB hard ceiling as the guard against those two numbers being wrong;
+> **the actual compressed size is still to be measured on device.**
+>
+> **Photos live in a private bucket, read through signed URLs.** A public bucket
+> would honour invariant 6 in Postgres and break it over HTTP for the most
+> personal data in the app. The object path is `<uid>/<plan_id>-<epoch>.jpg` and
+> the leading uid is not cosmetic — the storage policies compare it to
+> `auth.uid()`, so the layout *is* the authorization rule. Verified: writing into
+> another user's folder and writing to the bucket root are both refused.
+>
+> **`place_reports` and `memories` are append-only, and that took a second
+> migration.** The first claimed it with `grant select, insert` — which is a
+> no-op, because Supabase's default privileges already grant ALL on every new
+> `public` table to `anon` and `authenticated`. RLS was the real enforcement and
+> it held, but the refusal was *silent* (a delete removing zero rows) and the
+> migration asserted a layer that did not exist. Now revoked explicitly, so the
+> attempt errors. **`plan_edits` (Phase 5) has the same blanket grants and the
+> same claim in its comment** — protected identically by RLS, so not a live hole,
+> and left alone as out-of-phase rather than fixed quietly.
+>
+> **§10.5's one-report-per-user-per-place-per-30-days cap is deliberately NOT
+> enforced here.** It is a read-side rule and stays in 6b: a cap applied at write
+> time would silently discard a user's second report, which is indistinguishable
+> to them from the first not having worked. Phase 6 records honestly and lets 6b
+> filter.
+>
+> **A bias worth knowing before 6b reads this corpus:** every money field is
+> prefilled with what we predicted, so a figure submitted untouched is recorded
+> as though observed. That is defensible — the user was there — and it is
+> conservative in the one direction that matters: §10.5 only overrides a seeded
+> price when the median diverges by more than 20%, so confirmations pull the
+> median toward the seed and can never manufacture a wrong price. Prefilling can
+> slow a correction down; it cannot invent one.
 
 --- MVP ends here. Ship it. Use it for a month before deciding anything else. ---
 
