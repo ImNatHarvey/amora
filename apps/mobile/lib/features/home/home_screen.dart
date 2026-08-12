@@ -82,6 +82,11 @@ class HomeScreen extends ConsumerWidget {
               ),
               SizedBox(height: tokens.sm),
               OutlinedButton(
+                onPressed: () => context.push(Routes.memories),
+                child: const Text('Your memories'),
+              ),
+              SizedBox(height: tokens.sm),
+              OutlinedButton(
                 onPressed: () => context.push(Routes.devTokens),
                 child: const Text('View design tokens'),
               ),

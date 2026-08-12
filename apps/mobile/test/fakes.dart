@@ -1,11 +1,14 @@
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile/data/auth_repository.dart';
 import 'package:mobile/data/intake_repository.dart';
+import 'package:mobile/data/memories_repository.dart';
 import 'package:mobile/data/plans_repository.dart';
 import 'package:mobile/data/profiles_repository.dart';
 import 'package:mobile/data/resources_repository.dart';
 import 'package:mobile/data/retrieval_repository.dart';
 import 'package:mobile/models/activity.dart';
 import 'package:mobile/models/intake.dart';
+import 'package:mobile/models/memory.dart';
 import 'package:mobile/models/profile.dart';
 import 'package:mobile/models/resource.dart';
 import 'package:mobile/models/saved_plan.dart';
@@ -288,6 +291,108 @@ class FakePlansRepository implements PlansRepository {
     String? title,
   }) async =>
       'saved-plan-id';
+}
+
+/// Records what a completion sent, and what closures were reported.
+///
+/// It performs **no division and no summing**. `complete_plan` divides each stop
+/// figure by `party_size` to store a per-person report and derives the plan total
+/// itself (invariant 3, §9); a fake that did either would be testing the fake, and
+/// would hide the one bug that matters here — the screen halving a figure the
+/// server is also going to halve. What these tests check is which *party* figures
+/// the sheet sends, and under which seq.
+class FakeMemoriesRepository implements MemoriesRepository {
+  FakeMemoriesRepository({this.memories = const [], this.error});
+
+  List<Memory> memories;
+
+  /// When set, [complete] throws it instead of returning.
+  final Object? error;
+
+  /// Every completion, in call order.
+  final List<
+      ({
+        String planId,
+        List<Map<String, dynamic>> stopSpends,
+        List<Map<String, dynamic>> legFares,
+        int? rating,
+        String? caption,
+        String? photoPath,
+      })> completions = [];
+
+  /// Every closure report: the place, and the plan it came from if any. A null
+  /// plan is the §10.5 path and must stay reachable.
+  final List<({String placeId, String? planId})> closures = [];
+
+  /// What [pickPhoto] hands back. Null is the ordinary case — no camera in a
+  /// widget test — and every test here must still pass with it null, because a
+  /// completion with no photo has to write every report.
+  XFile? photoToReturn;
+
+  int uploadCount = 0;
+
+  @override
+  Future<Memory> complete({
+    required String planId,
+    required List<Map<String, dynamic>> stopSpends,
+    required List<Map<String, dynamic>> legFares,
+    int? rating,
+    String? caption,
+    String? photoPath,
+  }) async {
+    completions.add((
+      planId: planId,
+      stopSpends: stopSpends,
+      legFares: legFares,
+      rating: rating,
+      caption: caption,
+      photoPath: photoPath,
+    ));
+    if (error != null) throw error!;
+
+    return Memory(
+      id: 'memory-1',
+      planId: planId,
+      createdAtUtc: DateTime.utc(2026, 8, 12),
+      caption: caption,
+      rating: rating,
+      photoPath: photoPath,
+      // Deliberately not the sum of what was sent. The server derives this and
+      // the fake refuses to imitate that arithmetic.
+      actualSpendPhpCents: 12345,
+    );
+  }
+
+  @override
+  Future<List<Memory>> listMine() async => memories;
+
+  @override
+  Future<String> reportClosure({
+    required String placeId,
+    String? planId,
+    String? note,
+  }) async {
+    closures.add((placeId: placeId, planId: planId));
+    if (error != null) throw error!;
+    return 'report-1';
+  }
+
+  @override
+  Future<XFile?> pickPhoto({required ImageSource source}) async =>
+      photoToReturn;
+
+  @override
+  Future<String> uploadPhoto({
+    required String planId,
+    required XFile photo,
+  }) async {
+    uploadCount += 1;
+    return 'uid/$planId-1786000000000.jpg';
+  }
+
+  @override
+  Future<String> signedPhotoUrl(String path, {int expiresInSeconds = 3600}) async =>
+      'https://example.test/$path';
 }
 
 /// Records what was sent for extraction, and returns whatever the test says.
