@@ -26,6 +26,8 @@ import {
   utteranceHash,
   validateExtraction,
 } from './extraction.ts';
+import { callGemini } from '../_shared/gemini.ts';
+import { CORS, json, missingKeyResponse, UpstreamError } from '../_shared/http.ts';
 
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY');
 /**
@@ -53,104 +55,32 @@ const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY');
  *
  * If Gemini answers 404, set `EXTRACT_MODEL` rather than editing this file.
  */
-const GEMINI_MODEL = Deno.env.get('EXTRACT_MODEL') ?? 'gemini-2.5-flash-lite';
-
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const MODEL_SECRET = 'EXTRACT_MODEL';
+const EXTRACT_MODEL = Deno.env.get(MODEL_SECRET) ?? 'gemini-2.5-flash-lite';
 
 /** Long enough to say anything a date needs; short enough to bound the bill. */
 const MAX_UTTERANCE_CHARS = 500;
 
-/**
- * A failure that came from Gemini rather than from us, carrying its status.
- *
- * Without this the handler's catch turns every upstream problem into a 500, and
- * a caller cannot tell "you asked too fast, wait 30 seconds" from "something is
- * broken". That distinction is not cosmetic on a free tier: the limit is **5
- * requests per minute per model**, so 429 is an ordinary condition a client
- * should expect and retry, not an error to report to the user.
- *
- * Found by the Phase 3b acceptance run, whose own retry logic never fired
- * because it was watching for a 429 that had already been flattened to a 500.
- */
-class UpstreamError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-  }
-}
-
-async function callGemini(prompt: string): Promise<unknown> {
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': GEMINI_KEY! },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: EXTRACTION_SCHEMA,
-        // Near-zero, unlike composition's 0.7. Reading "under 200 tonight" is
-        // not a creative task, and variability here would mean the same
-        // sentence produced different constraints on different days.
-        temperature: 0,
-      },
-    }),
+/** Reads one sentence into four typed fields. `temperature` is 0. */
+function extract(prompt: string) {
+  return callGemini<unknown>({
+    model: EXTRACT_MODEL,
+    modelSecret: MODEL_SECRET,
+    apiKey: GEMINI_KEY!,
+    prompt,
+    schema: EXTRACTION_SCHEMA,
+    // Near-zero, unlike composition's 0.7. Reading "under 200 tonight" is not a
+    // creative task, and variability here would mean the same sentence produced
+    // different constraints on different days.
+    temperature: 0,
   });
-
-  if (!response.ok) {
-    const body = await response.text();
-    if (response.status === 404) {
-      throw new UpstreamError(
-        404,
-        `Gemini rejected model "${GEMINI_MODEL}" (404). Set the GEMINI_MODEL ` +
-        `secret to a model available on your key. Body: ${body}`,
-      );
-    }
-    if (response.status === 429) {
-      throw new UpstreamError(
-        429,
-        'Too many requests to the model just now. The free tier allows 5 per ' +
-        'minute; try again shortly.',
-      );
-    }
-    if (response.status === 503) {
-      throw new UpstreamError(
-        503,
-        'The model is busy right now. This is temporary — try again shortly.',
-      );
-    }
-    throw new UpstreamError(response.status, `Gemini ${response.status}: ${body}`);
-  }
-
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error(`Gemini returned no content: ${JSON.stringify(data).slice(0, 500)}`);
-
-  return JSON.parse(text);
 }
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
-  const json = (body: unknown, status = 200) =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { ...CORS, 'content-type': 'application/json' },
-    });
-
   try {
-    if (!GEMINI_KEY) {
-      // Loud and specific. A missing key is a setup step, not a bug.
-      return json({
-        error: 'GEMINI_API_KEY is not set on this project. Add it with: ' +
-          'supabase secrets set GEMINI_API_KEY=... (get a free key at ' +
-          'https://aistudio.google.com/apikey)',
-      }, 503);
-    }
+    if (!GEMINI_KEY) return missingKeyResponse();
 
     const authorization = request.headers.get('Authorization');
     if (!authorization) return json({ error: 'Missing Authorization header.' }, 401);
@@ -212,7 +142,7 @@ Deno.serve(async (request) => {
 
     const knownAreas = (areaRows ?? []).map((r: { area: string }) => r.area);
 
-    const raw = await callGemini(
+    const raw = await extract(
       buildExtractionPrompt(utterance, knownAreas, new Date().toISOString()),
     );
     const { constraints, rejected } = validateExtraction(raw, knownAreas);
@@ -224,7 +154,7 @@ Deno.serve(async (request) => {
     // copy anything worth keeping past a day.
     if (rejected.length > 0) {
       console.error('INTAKE_REJECTED', JSON.stringify({
-        model: GEMINI_MODEL,
+        model: EXTRACT_MODEL,
         rejected,
         // The utterance is NOT logged. It is user text, and the whole design
         // rests on it never being stored.

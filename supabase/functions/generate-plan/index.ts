@@ -22,17 +22,15 @@ import {
   DEFAULT_PARTY_SIZE,
   type PlanRequest,
 } from './constraint_hash.ts';
+import { callGemini } from '../_shared/gemini.ts';
+import { CORS, json, missingKeyResponse, UpstreamError } from '../_shared/http.ts';
 
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY');
 // A secret rather than a constant: model names change faster than deploys, and
 // D8 says swapping the model is a config change. If Gemini answers 404, set
 // this secret rather than editing this file.
-const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash';
-
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const MODEL_SECRET = 'GEMINI_MODEL';
+const GEMINI_MODEL = Deno.env.get(MODEL_SECRET) ?? 'gemini-2.5-flash';
 
 /** What the model is allowed to return. Nothing here is a fact about a place. */
 const RESPONSE_SCHEMA = {
@@ -102,87 +100,25 @@ function buildPrompt(
   ].filter(Boolean).join('\n');
 }
 
-/**
- * A failure that came from Gemini rather than from us, carrying its status.
- *
- * Without it the handler's catch flattens every upstream problem to a 500, and
- * a caller cannot tell "you asked too fast, wait" from "something is broken".
- * On a free tier limited to **5 requests per minute per model**, 429 is an
- * ordinary condition to expect and retry — not an error worth showing anyone.
- */
-class UpstreamError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-  }
-}
-
-async function callGemini(prompt: string): Promise<{ plans: { title: string; stops: unknown[] }[] }> {
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': GEMINI_KEY! },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: 0.7,
-      },
-    }),
+/** Composes three plans. `temperature` is 0.7 — this is the judgement call. */
+function compose(prompt: string) {
+  return callGemini<{ plans: { title: string; stops: unknown[] }[] }>({
+    model: GEMINI_MODEL,
+    modelSecret: MODEL_SECRET,
+    apiKey: GEMINI_KEY!,
+    prompt,
+    schema: RESPONSE_SCHEMA,
+    // Unlike extraction's 0, which is mechanical. Composing an evening from
+    // thirty candidate rows is the part where variety is the point.
+    temperature: 0.7,
   });
-
-  if (!response.ok) {
-    const body = await response.text();
-    if (response.status === 404) {
-      throw new Error(
-        `Gemini rejected model "${GEMINI_MODEL}" (404). Set the GEMINI_MODEL ` +
-        `secret to a model available on your key. Body: ${body}`,
-      );
-    }
-    if (response.status === 429) {
-      throw new UpstreamError(
-        429,
-        'Too many requests to the model just now. The free tier allows 5 per ' +
-        'minute; try again shortly.',
-      );
-    }
-    if (response.status === 503) {
-      throw new UpstreamError(
-        503,
-        'The model is busy right now. This is temporary — try again shortly.',
-      );
-    }
-    throw new UpstreamError(response.status, `Gemini ${response.status}: ${body}`);
-  }
-
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error(`Gemini returned no content: ${JSON.stringify(data).slice(0, 500)}`);
-
-  return JSON.parse(text);
 }
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
-  const json = (body: unknown, status = 200) =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { ...CORS, 'content-type': 'application/json' },
-    });
-
   try {
-    if (!GEMINI_KEY) {
-      // Loud and specific. A missing key is a setup step, not a bug, and the
-      // message should say which step.
-      return json({
-        error: 'GEMINI_API_KEY is not set on this project. Add it with: ' +
-          'supabase secrets set GEMINI_API_KEY=... (get a free key at ' +
-          'https://aistudio.google.com/apikey)',
-      }, 503);
-    }
+    if (!GEMINI_KEY) return missingKeyResponse();
 
     const authorization = request.headers.get('Authorization');
     if (!authorization) return json({ error: 'Missing Authorization header.' }, 401);
@@ -284,7 +220,7 @@ Deno.serve(async (request) => {
     let costedPlans: Record<string, unknown>[] = [];
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
-      const generated = await callGemini(buildPrompt(req, places, activities ?? [], correction));
+      const generated = await compose(buildPrompt(req, places, activities ?? [], correction));
 
       const results = [];
       const rejected: string[] = [];

@@ -507,8 +507,43 @@ btree on `plan_items(plan_id, seq)`.
 > was dropped in `20260805085843` for exactly that reason.
 
 **RLS:** every table, from its creating migration. `places`, `activities`,
-`transit_fares`, and `resource_catalog` are world-readable but insert/update only by
-the owner role. Everything user-scoped is readable only by its owner.
+`transit_fares`, and `resource_catalog` are world-readable and written only by the
+service role. Everything user-scoped is readable only by its owner.
+
+> **Two layers, and the second had to be added deliberately.** RLS is the
+> enforcement; the grants are the belt. Supabase ships `alter default privileges in
+> schema public grant all on tables to anon, authenticated`, so **every table
+> arrives with INSERT, UPDATE, DELETE and TRUNCATE already granted to both roles** —
+> a `grant select, insert` in a migration adds nothing and revokes nothing, and
+> reads like a restriction while being a no-op.
+>
+> That left thirteen tables, found by audit in the post-Phase-6 review, whose write
+> privileges no policy backed. Nothing was exploitable — RLS refuses the write and
+> matches zero rows, and TRUNCATE (which RLS does **not** cover) has no PostgREST
+> endpoint — but the refusal was *silent* and this section claimed a layer that did
+> not exist. Migration `20260812112101` revokes them per table, so the attempt now
+> errors instead. **Verified: the audit query returns zero rows, and the eight
+> things an ordinary signed-in user must be able to do still work.**
+>
+> The audit, worth re-running after any new table:
+>
+> ```sql
+> -- every write privilege granted to anon/authenticated with no policy behind it
+> select g.table_name, g.privilege_type
+> from (select table_name, privilege_type from information_schema.role_table_grants
+>       where table_schema='public' and grantee in ('anon','authenticated')
+>         and privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE')
+>       group by 1,2) g
+> where not exists (select 1 from pg_policies p
+>                   where p.schemaname='public' and p.tablename=g.table_name
+>                     and (p.cmd=g.privilege_type or p.cmd='ALL'));
+> ```
+>
+> **A blanket `revoke all` is the wrong fix** and was rejected: it would take
+> INSERT from `places` (Phase 5's user-submitted stops), UPDATE from `profiles`
+> (onboarding), and DELETE from `user_resources` (the picker replaces a selection by
+> deleting and reinserting), breaking three working features to correct a
+> documentation error.
 
 **Phasing note:** this is the full target schema, but no single migration creates all
 of it — each phase's migration adds only the tables that phase needs (`profiles`,
@@ -785,7 +820,7 @@ isn't useful, the AI won't save it.**
 > `build_simple_plan` does with the same number, so the two surfaces cannot
 > disagree about what ₱200 buys. That division is regression-tested.
 
-**Phase 3 — Gemini generation — ⚠️ BUILT, AWAITING AN API KEY**
+**Phase 3 — Gemini generation — ✅ ALL THREE CRITERIA MET (2026-08-12)**
 Edge function, `responseSchema`, validation layer, rejection logging, plan_cache.
 *Accept:* 20 consecutive generations produce zero invalid IDs; every total matches an
 independent SQL recomputation exactly; second identical request is a cache hit.
@@ -833,11 +868,30 @@ independent SQL recomputation exactly; second identical request is a cache hit.
 > request to prove a cache hit, and writes every plan out as JSON.
 >
 > **It covers two of the three criteria and says so.** The third — "every total
-> matches an independent SQL recomputation" — is done by hand against `places` and
-> `transit_fares`, and **must not go through `cost_generated_plan`**, which is the
-> function under test. A function confirming its own arithmetic proves nothing.
+> matches an independent SQL recomputation" — **is now its own command**:
+> `node supabase/functions/generate-plan/verify-totals.mjs`. It recomputes every
+> plan from `places` and `transit_fares`, taking only the stop slug, the leg mode
+> and the claimed totals from the payload, and **must not go through
+> `cost_generated_plan`**, which is the function under test. A function confirming
+> its own arithmetic proves nothing.
+>
+> It does the arithmetic in **Node rather than SQL**, on purpose: a recomputation
+> in the same dialect, with the same joins, in the same engine can repeat the
+> original's mistake, while a second implementation in another language cannot
+> repeat it by accident.
 >
 > With no key set, the script stops before creating anything and prints what to do.
+>
+> **All three criteria met 2026-08-12: 20 generations, 0 refused, cache hit, and
+> 58/58 totals.** The blocker had been a *stale deployment* rather than the code —
+> the deployed function had no `UpstreamError` class, so 429s became 500s and the
+> harness's retry never fired. See `HANDOFF.md`, "Review pass, post-Phase-6",
+> including why the "fresh" column matters more than the pass and why the first
+> hand-check reported a mismatch that was the check's own fault.
+>
+> **This still says nothing about whether the plans are good.** All 15 places are
+> `test-*`; the criteria prove the pipeline holds, and the note below about
+> placeholder data stands unchanged.
 >
 > **The plan tables have no writer yet, deliberately.** `plans`, `plan_items` and
 > `plan_legs` are created here because §5's phasing note puts them here, but
