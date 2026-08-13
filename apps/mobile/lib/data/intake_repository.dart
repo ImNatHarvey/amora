@@ -42,8 +42,10 @@ class IntakeRepository {
 
         final data = response.data as Map<String, dynamic>;
 
-        // The server's sentence beats a generic one: "GEMINI_API_KEY is not
-        // set" is a fixable message and "Could not read that" is not.
+        // As in `PlanGenerationRepository`: this covers a 200 carrying an
+        // error, while the non-2xx path — every message either function
+        // actually composes — is translated by `guard`'s `FunctionException`
+        // clause, because `invoke` throws rather than returning those bodies.
         if (data['error'] != null) {
           throw RepositoryException(data['error'].toString());
         }

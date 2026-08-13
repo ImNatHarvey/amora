@@ -60,11 +60,15 @@ class PlanGenerationRepository {
 
         final data = response.data as Map<String, dynamic>;
 
-        // The function reports its own failures in the body, and they are the
-        // useful ones: a missing API key, or a model that produced nothing
-        // valid twice. Surfacing the server's sentence beats replacing it with
-        // a generic one — "GEMINI_API_KEY is not set" is a fixable message and
-        // "Could not generate a plan" is not.
+        // Kept for the 200-with-an-error case, which is a shape the function
+        // does not currently emit but is cheap to survive.
+        //
+        // **The path that actually carries a server message is `guard`'s
+        // `FunctionException` clause**, not this line. `invoke` throws on any
+        // non-2xx rather than returning the body, so a 503 "GEMINI_API_KEY is
+        // not set" never reaches here — it is translated one layer up. That was
+        // broken until the post-Phase-6 review, and this comment used to claim
+        // the credit for it.
         if (data['error'] != null) {
           throw RepositoryException(data['error'].toString());
         }

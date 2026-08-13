@@ -10,9 +10,17 @@ don't say. Last updated for the Phase 6 commit.
 no more code to write before the app is usable end to end. What stands between
 here and a shippable MVP is **data and a phone**, not development.
 
-Phases 0 and 1 are complete and accepted on device. **Phases 2, 3 and 4 are code
-complete and none of the three is accepted** — see the ledger below for exactly
-which criteria are outstanding and why. Phase 3b was **accepted 2026-08-10**.
+Phases 0 and 1 are complete and accepted on device. Phase 3b was **accepted
+2026-08-10**, and **Phase 3's three criteria were all met on 2026-08-12** — 20
+generations with zero invalid IDs, a cache hit, and 58/58 totals recomputed
+independently. **Phases 2 and 4 are code complete and neither is accepted**; see
+the ledger below for what is outstanding and why.
+
+> Phase 3 passing is narrower than it sounds and the distinction matters: it
+> proves the *pipeline* holds — the model never named a place outside the
+> candidate set, and no total was ever wrong. It says nothing about whether the
+> plans are any good, because all 15 places are still `test-*`. That question
+> belongs to Phase 2's criterion and needs real data.
 
 **Phase 5 is complete**, and it is the first phase since 1 whose acceptance
 criteria were actually *met* rather than deferred: nothing in editing needs a
@@ -89,8 +97,8 @@ a phase.**
 |---|---|---|
 | 0 | ≥8 places across ≥3 barangays; all 15 rows are `test-*` | `DESK-CHECKLIST.md` |
 | 2 | "real, currently-open places within 5 km", the ₱0 run and the ₱100–₱200 run | the same 8 places |
-| 3 | 20 generations with zero invalid IDs; cache hit | `GEMINI_API_KEY` |
-| 3 | every total matches an independent SQL recomputation | the key, **plus doing it by hand** — not via `cost_generated_plan` |
+| ~~3~~ | ~~20 generations with zero invalid IDs; cache hit~~ | **MET 2026-08-12** — 20/20, zero refused, cache hit confirmed |
+| ~~3~~ | ~~every total matches an independent SQL recomputation~~ | **MET 2026-08-12** — 58/58 plans, `verify-totals.mjs` |
 | 4 | whether the *map* is useful | real coordinates; 15 invented ones draw a cluster and 72 m legs |
 | 4 | "a DIY activity plays its tutorial in-app" | one real `tutorial_url` — the **code is done**, see below |
 | 4 | on-device confirmation of the Phase 4 UI | Nat's phone was in use on 2026-08-08 |
@@ -102,53 +110,65 @@ a phase.**
 catalogue names, both rephrasings cache hits, on `gemini-2.5-flash-lite`. Run
 `node supabase/functions/extract-intake/acceptance.mjs` to reproduce.
 
-**Phase 3's 20 generations are still open, and no longer for want of a key.**
-The run errored 11 of 20. Diagnosed, not guessed: the failures returned in
-~900 ms while successes take 20–30 s, and a sub-second failure is Gemini
-rejecting instantly with a 429 — which the **deployed** `generate-plan` still
-flattens to a 500, so the harness's retry never sees it. The fix is written in
-`generate-plan/index.ts` (the `UpstreamError` class) but **has not been
-deployed**. Deploy it, then re-run.
+**`GEMINI_API_KEY` is set**, and has been since before the Phase 3b run of
+2026-08-10. Earlier revisions of this file called it "the most expensive row
+open" and blamed four criteria on it; that was true when written and is not now.
+Struck rather than deleted so nobody re-reads it as a live task.
 
-**The `GEMINI_API_KEY` row is now the most expensive one open.** It is free and
-takes two minutes, and it alone blocks *four* criteria across two phases —
-Phase 3's 20 generations and hand-recomputed totals, and Phase 3b's chips,
-cache hit and adversarial run. The adversarial run is the direct test of
-invariant 1 for the extraction path: **the only evidence that the model does
-not emit place names.** The unit tests prove nothing unsafe can get through even
-if it does, which is the stronger guarantee — but it is not the same claim, and
-both were specified.
+**Phase 3's 20 generations: the deployed function was the blocker, and it is
+fixed.** The run had errored 11 of 20 — diagnosed, not guessed: failures returned
+in ~900 ms while successes take 20–30 s, and a sub-second failure is Gemini
+rejecting instantly with a 429, which the **deployed** `generate-plan` flattened
+to a 500 so the harness's retry never saw it. The fix had been written in
+`index.ts` and never deployed. The post-Phase-6 review confirmed that by reading
+the deployed bundle back (v5 had no `UpstreamError` class at all) and deployed
+**v6**. See "Review pass, post-Phase-6" for the result of the re-run.
 
 **Phase 5 is not in this ledger for its own criteria**, and that is the point:
 editing is true or false regardless of whether a place is real, so it could be
-finished. Every other open row above is waiting on 8 rows of data or one API key.
+finished. Every other open row above is waiting on 8 rows of data or on the phone.
 
-Two of these are one free API key and one evening of desk work. Neither gets
-easier by being left later, and both gate the only question that matters — is a
-Bocaue Saturday any good.
+What is left is one evening of desk work and one session with wireless debugging
+on. Neither gets easier by being left later, and the first gates the only question
+that matters — is a Bocaue Saturday any good.
 
-## Phase 3 — built, needs one secret
+## Phase 3 — Gemini generation. All three criteria MET 2026-08-12.
 
 Everything except the model call is deployed and verified: four tables with RLS,
 `cost_generated_plan`, the `generate-plan` Edge Function, the Dart repository and
 models, and a "Generate with AI" button beside the Phase 2 builder on identical
 input.
 
-**Outstanding: `GEMINI_API_KEY`.** Free, two minutes, `aistudio.google.com/apikey`,
-then `npx supabase secrets set GEMINI_API_KEY=... --project-ref eyeipcislyrsxnogyxas`.
-Until it is set, the function answers 503 with exactly that instruction —
-confirmed against the live endpoint, not assumed.
+~~**Outstanding: `GEMINI_API_KEY`.**~~ **Set, and has been since before
+2026-08-10.** If it is ever unset again the function answers 503 with the exact
+`supabase secrets set` command — and since the post-Phase-6 review that sentence
+reaches the app instead of being replaced by "check your connection".
 
-`GEMINI_MODEL` is also a secret, defaulting to `gemini-2.5-flash`. **If the first
-call returns 404, set that secret rather than editing the function** — the error
-message says so too. Model names move faster than deploys and D8 makes the model a
-config choice.
+`GEMINI_MODEL` is also a secret, defaulting to `gemini-2.5-flash`. **If a call
+returns 404, set that secret rather than editing the function** — the error
+message says so too, and now names the right secret per function
+(`extract-intake` reads `EXTRACT_MODEL`, and its 404 used to send you to
+`GEMINI_MODEL`, which it never consults). Model names move faster than deploys and
+D8 makes the model a config choice.
 
-**Run acceptance with:** `node supabase/functions/generate-plan/acceptance.mjs`.
-With no key set it stops before creating anything and prints what to do. It covers
-20 generations and the cache hit; recomputing totals against `places` and
-`transit_fares` is still done by hand, and **must not use `cost_generated_plan`** —
-that is the function being tested.
+**Run acceptance with two commands, in order:**
+
+```
+node supabase/functions/generate-plan/acceptance.mjs      # 20 generations + cache hit
+node supabase/functions/generate-plan/verify-totals.mjs   # every total, independently
+```
+
+The first writes `.acceptance/phase3-acceptance.json`; the second reads it and
+recomputes every plan from `places` and `transit_fares`. Neither uses
+`cost_generated_plan` — that is the function being tested.
+
+**Empty `plan_cache` first if you want the run to mean anything.** Otherwise most
+of the twenty are cache hits replaying already-validated payloads, and the
+zero-invalid-IDs result is close to vacuous:
+
+```sql
+delete from public.plan_cache;   -- a cache; the only cost is refilling it
+```
 
 ### Two defects found closing Phase 3 out
 
@@ -425,7 +445,7 @@ Tested in both directions, like the constraint hash.
 
 ## Phase 6 — completion & actuals. Code complete 2026-08-12.
 
-Five migrations (`20260812095046`, `095154`, `095231`, `095556`, `101500`), one
+Five migrations (`20260812095046`, `095154`, `095231`, `095556`, `095956`), one
 repository, one sheet, one timeline screen. **No new dependency** —
 `image_picker` was already installed and compresses natively, so
 `flutter_image_compress` and its Kotlin Gradle Plugin stay out; the §8 note asking
@@ -473,7 +493,7 @@ Supabase ships `alter default privileges in schema public grant all on tables to
 anon, authenticated`, so every new `public` table arrives with DELETE, UPDATE and
 TRUNCATE already granted. The first Phase 6 migration claimed "no update or delete
 grant" and did not have one. RLS held — a delete removed zero rows — but the
-refusal was **silent** and the second layer was fiction. Migration `101500`
+refusal was **silent** and the second layer was fiction. Migration `095956`
 revokes properly, so it now errors.
 
 > **`plan_edits` has the identical defect and is deliberately untouched.** Same
@@ -573,6 +593,14 @@ two false passes here.
 `source`, `verification_tier` and `submitted_by_user_id`; an update grant would
 be the same hole through a second door.
 
+> **Correction, 2026-08-12: both *were* granted, and had been since Phase 0.**
+> Not by anyone's edit — Supabase's default privileges grant every verb on every
+> new `public` table to `anon` and `authenticated`, so this instruction described
+> an intention rather than the database. RLS refused the writes, so nothing was
+> exploitable, but the sentence above was not true when it was written. Migration
+> `20260812112101` makes it true. The audit query is in `00-architecture.md` §5;
+> re-run it whenever a table is added.
+
 **`known_areas` is not `origin_areas`, deliberately.** An origin needs a
 coordinate and the only honest one is the centroid of curated places. A new
 place brings its own from a map tap, so it may sit in Duhat, Wakas or Batia —
@@ -655,7 +683,151 @@ Most testing needs neither account: `set local role authenticated` plus
 `set local request.jwt.claims` impersonates any user for RLS work without a
 password at all, which is how the Phase 5 attack tests were run.
 
-## Review pass — what it found
+## Review pass, post-Phase-6 — what it found
+
+Run after the MVP closed, before the seed-data run. Four findings, three of them
+real bugs, one the fourth recurrence of this repo's signature failure mode.
+
+**What was already healthy**, so nobody re-checks it: all 20 public Postgres
+functions pin `search_path`, including both `SECURITY DEFINER` ones — no
+escalation surface. `INTAKE_REJECTED` logs field *names* only, so the "user text
+is never stored or logged" claim holds under inspection. No `TODO`/`FIXME`
+anywhere.
+
+### 1. Every Edge Function error was reaching users as "check your connection"
+
+**The worst finding, and it made three earlier pieces of work inert.**
+`functions_client.invoke` **throws** `FunctionException` on any non-2xx rather
+than returning the body, and `guard` had no clause for it — so it fell to the
+generic catch and became `'<fallback> Check your connection and try again.'`
+
+| Server said | User read |
+|---|---|
+| 503 `GEMINI_API_KEY is not set… supabase secrets set…` | "Could not generate a plan. Check your connection…" |
+| 429 `the free tier allows 5 per minute; try again shortly` | the same |
+| 502 `The model produced no valid plan after a retry.` | the same |
+
+So: both repositories' `data['error']` checks were dead for non-2xx (they can
+only fire on an error inside a **200**, which neither function emits); the whole
+`UpstreamError` effort in both Edge Functions was invisible to the app; and
+`repository_exception.dart`'s own doc comment had always listed
+`FunctionException` among the types it handled. On a tier capped at five requests
+a minute, a rate-limited couple was being told to fix their wifi.
+
+**Body before status, and a test caught that ordering.** The first fix checked
+429/503 first — which passed its own test and broke the missing-key case, because
+that message is served as a **503**. The one error carrying a fixable instruction
+became the one you cannot act on. `guard` now reads `details['error']` first and
+uses the status only when there is nothing to quote.
+
+**`test/repository_exception_test.dart` is new, 13 cases.** `guard` decides every
+error message in the app and had no test at all, which is how a missing exception
+clause survived three phases.
+
+### 2. The deployed `generate-plan` was stale — and that was Phase 3's blocker
+
+Read back from the project: v5 had **no `UpstreamError` class at all**, no 429 or
+503 branch, and a catch that returned 500 for everything. Exactly as this file
+said, and confirmed rather than assumed. That is why Phase 3's acceptance failed
+11 of 20 — sub-second failures were 429s flattened to 500, so the harness's retry
+never fired.
+
+Both functions are now deployed at **v6** and **read back and compared against
+disk**, which is the check this file names as the hazard of MCP deployment and
+which nobody had run.
+
+### 3. `extract-intake`'s 404 told you to set the wrong secret
+
+It said *"Set the `GEMINI_MODEL` secret"* while the function reads
+`EXTRACT_MODEL` — and its own doc comment insists at length that it must never
+fall back to `GEMINI_MODEL`. Doing what the error said would have done nothing.
+Root cause: the local const was *named* `GEMINI_MODEL` while holding
+`EXTRACT_MODEL`. Now `EXTRACT_MODEL`, and the shared helper takes the secret name
+as a **required parameter** — a copied message can be wrong, a required argument
+has to be passed.
+
+### 4. `supabase/functions/_shared/` — because findings 2 and 3 *were* the drift
+
+`UpstreamError`, `CORS`, `json()`, `callGemini`, the missing-key 503 and the
+two-client auth preamble all existed twice. One copy learned about 429s and the
+other did not; one copy's message was edited without its variable being renamed.
+
+Now `_shared/http.ts` and `_shared/gemini.ts`, with `callGemini` parameterised by
+model, secret name, schema and temperature. `upstreamErrorFor` is exported and
+tested against fabricated responses — **7 new deno tests**, in both directions
+(each caller's 404 must name its own secret and *not* the other's), because a
+mapping that always said `EXTRACT_MODEL` would pass a one-sided test.
+
+**Deploying `_shared` through MCP works**, and the trick is worth keeping: pass
+the **functions directory** as the bundle root — files named
+`generate-plan/index.ts`, `_shared/http.ts` — with `entrypoint_path` set to
+`generate-plan/index.ts`. A `../_shared/…` import then resolves inside the
+bundle. The CLI does this natively but needs `supabase login`, which it still
+does not have.
+
+### 5. Suggestion, not done: `geolocator` is installed and imported nowhere
+
+§8 said GPS would arrive with Phase 4's map; Phase 4 shipped without it, so this
+is an unfulfilled plan rather than a pending one, and `profiles.home_lat`/`home_lng`
+are still written by nothing. An unused native dependency is precisely the
+`flutter_image_compress` lesson — a package that broke the build while nothing
+imported it.
+
+**Left in place deliberately**, because CLAUDE.md says not to add a dependency
+without asking and the symmetric courtesy is not to remove one either. Dropping it
+is one line in `pubspec.yaml` plus `flutter pub get`; re-adding it later is the
+same line.
+
+### Phase 3's acceptance now passes — all three criteria
+
+Deploying v6 was the whole blocker. **20 generations, 0 refused, cache hit
+confirmed**, against 11 errors of 20 before.
+
+**Read the "fresh" column, not just the pass.** The first re-run showed 20/20 —
+but 15 were cache hits, because the entries from 2026-08-10 were still valid
+(nothing had been re-imported, so `places_version` had not moved). "Zero invalid
+IDs" across 15 replays of already-validated payloads is true and nearly vacuous:
+invariant 2 was tested 5 times, not 20. So `plan_cache` was emptied and the run
+repeated — **10 fresh generations then 10 cache hits**, which is the most the
+harness can produce, since it cycles ten distinct constraint sets and runs 11–20
+repeat 1–10's.
+
+**Invariant 2 verified from outside the function under test.** The 20 runs
+produced 58 plans and 162 stops referencing 14 distinct `place_id`s; all 14 were
+checked against `places` directly — 14 exist, 14 are `curated`, **zero invented,
+zero non-curated**. `cost_generated_plan`'s own `valid` flag was not the evidence.
+
+**The third criterion is now a command**, not a note saying "do this by hand":
+`node supabase/functions/generate-plan/verify-totals.mjs` recomputes every plan's
+places, fares and total from `places` and `transit_fares`, taking only the stop
+slug, the leg mode and the claimed totals from the payload. **58/58 on all three
+figures.** It deliberately does the arithmetic in Node rather than SQL: a
+recomputation in the same dialect, with the same joins, in the same engine can
+repeat the original's mistake.
+
+> **The first hand-check reported a mismatch that was the check's fault.** It
+> summed every `transit_fares` row for a barangay pair and got ₱160 where the
+> function said ₱60 — because **Poblacion↔Turo has both a tricycle row (₱25 pp)
+> and a jeepney row (₱15 pp)**, and a leg picks one. Worth keeping as the failure
+> mode of verification-by-recomputation: the check is code too.
+
+**Two of twenty runs returned 2 plans instead of 3.** Not a criterion violation —
+no plan was flagged invalid, so the model simply gave two where the prompt asked
+for three. Prompt adherence, not an invented place. Recorded so nobody reads it as
+a rejection.
+
+**What is still not answered, and cannot be yet:** whether the plans are any
+*good*. All 15 places are `test-*`, so 20 generations prove the pipeline and
+nothing about a Bocaue Saturday. §8 already separates those two claims.
+
+### Also fixed here
+
+**Two migration filenames did not match the ledger.** `apply_migration` stamps its
+own version, and Phase 6's append-only migration was committed as `…101500` while
+the database recorded `…095956`. A later `supabase db push` would have tried to
+replay it. Both renamed to match.
+
+## Review pass, post-Phase-3 — what it found
 
 Run after Phase 3 landed, because three phases had gone in fast. Supabase security
 advisors came back clean: the only two items are `plan_cache` having RLS with no
