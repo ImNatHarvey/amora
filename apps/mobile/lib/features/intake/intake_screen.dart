@@ -81,13 +81,16 @@ class _IntakeScreenState extends ConsumerState<IntakeScreen> {
     }
   }
 
-  /// The budget chip expands into the big centred field, not a cramped row.
+  /// The budget chip expands into a sheet where the amount is the whole screen.
   ///
   /// `02-design-system.md` §5's rule survives the move to conversation:
-  /// wherever a budget is entered it is the main event on that surface.
-  Future<int?> _askBudget(int? currentCents) => showDialog<int>(
+  /// wherever a budget is entered it is the main event on that surface. A
+  /// bottom sheet rather than a dialog, because the presets and the amount need
+  /// room to breathe and a dialog constrains both.
+  Future<int?> _askBudget(int? currentCents) => showModalBottomSheet<int>(
         context: context,
-        builder: (context) => _BudgetDialog(currentCents: currentCents),
+        isScrollControlled: true,
+        builder: (context) => _BudgetSheet(currentCents: currentCents),
       );
 
   Future<DateTime?> _askTime(DateTime? currentUtc) async {
@@ -240,23 +243,37 @@ class _IntakeScreenState extends ConsumerState<IntakeScreen> {
 
 /// What the budget chip expands into.
 ///
-/// A widget rather than a controller built inside `showDialog`, because the
-/// controller has to outlive the dialog's **exit animation**. Creating it in
-/// the caller and disposing it from `whenComplete` throws "A
+/// A widget rather than a controller built inside `showModalBottomSheet`,
+/// because the controller has to outlive the sheet's **exit animation**.
+/// Creating it in the caller and disposing it from `whenComplete` throws "A
 /// TextEditingController was used after being disposed" — the future completes
 /// when `pop` is called, while the field is still on screen fading out. Letting
-/// the dialog's own State own it makes the lifetime exactly right by
+/// the sheet's own State own it makes the lifetime exactly right by
 /// construction.
-class _BudgetDialog extends StatefulWidget {
-  const _BudgetDialog({required this.currentCents});
+///
+/// **Presets are shortcuts, never the only path.** Tapping one fills the field
+/// rather than submitting, so the amount stays editable afterwards and an
+/// unusual number is no harder to enter than a common one.
+///
+/// The OS numeric keyboard is used rather than a bespoke keypad. That is a
+/// deliberate departure from the payment-app reference: a custom keypad has to
+/// re-earn 48 dp targets and 1.3× font scaling by hand, and it loses TalkBack
+/// for free. What the reference contributes is the *hierarchy* — the amount
+/// dominates the surface — not the widget.
+class _BudgetSheet extends StatefulWidget {
+  const _BudgetSheet({required this.currentCents});
 
   final int? currentCents;
 
   @override
-  State<_BudgetDialog> createState() => _BudgetDialogState();
+  State<_BudgetSheet> createState() => _BudgetSheetState();
 }
 
-class _BudgetDialogState extends State<_BudgetDialog> {
+class _BudgetSheetState extends State<_BudgetSheet> {
+  /// Peso amounts, not centavos — this is the surface where the user thinks in
+  /// pesos, and the conversion happens once at [_submit].
+  static const _presets = [0, 200, 500, 1000];
+
   late final _field = TextEditingController(
     text: widget.currentCents == null
         ? ''
@@ -264,39 +281,111 @@ class _BudgetDialogState extends State<_BudgetDialog> {
   );
 
   @override
+  void initState() {
+    super.initState();
+    // Redraws so the preset chips reflect what is typed, in both directions:
+    // typing 500 by hand selects the ₱500 chip.
+    _field.addListener(_onChanged);
+  }
+
+  void _onChanged() => setState(() {});
+
+  @override
   void dispose() {
+    _field.removeListener(_onChanged);
     _field.dispose();
     super.dispose();
   }
 
-  void _submit() => Navigator.of(context).pop(int.tryParse(_field.text.trim()));
+  int? get _pesos => int.tryParse(_field.text.trim());
+
+  void _pick(int pesos) {
+    _field.value = TextEditingValue(
+      text: '$pesos',
+      selection: TextSelection.collapsed(offset: '$pesos'.length),
+    );
+  }
+
+  void _submit() => Navigator.of(context).pop(_pesos);
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Budget for the two of you'),
-      content: TextField(
-        controller: _field,
-        autofocus: true,
-        keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.headlineSmall,
-        decoration: const InputDecoration(
-          prefixText: '₱',
-          border: OutlineInputBorder(),
-          // Zero is a first-class answer, not a lesser one (§9).
-          helperText: '0 is fine — free plans are still plans.',
+    final theme = Theme.of(context);
+    final tokens = theme.tokens;
+
+    return Padding(
+      // The keyboard is the whole point of this sheet, so its inset has to be
+      // honoured or the field it raises sits underneath it.
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.all(tokens.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Budget for the two of you',
+                style: theme.textTheme.titleLarge,
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: tokens.xs),
+              // §9's convention, stated where it is entered rather than only in
+              // the docs: prices are per person, the budget is not.
+              Text(
+                'For the whole date, not each.',
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: tokens.lg),
+              TextField(
+                controller: _field,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                textAlign: TextAlign.center,
+                // The amount is the main event on this surface (§5).
+                style: theme.textTheme.displaySmall,
+                decoration: const InputDecoration(
+                  prefixText: '₱',
+                  border: OutlineInputBorder(),
+                  // Zero is a first-class answer, not a lesser one (§9).
+                  helperText: '0 is fine — free plans are still plans.',
+                  helperMaxLines: 2,
+                ),
+                onSubmitted: (_) => _submit(),
+              ),
+              SizedBox(height: tokens.lg),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: tokens.sm,
+                runSpacing: tokens.sm,
+                children: [
+                  for (final preset in _presets)
+                    ChoiceChip(
+                      label: Text(preset == 0 ? 'Free' : '₱$preset'),
+                      selected: _pesos == preset,
+                      onSelected: (_) => _pick(preset),
+                    ),
+                ],
+              ),
+              SizedBox(height: tokens.lg),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  SizedBox(width: tokens.sm),
+                  FilledButton(onPressed: _submit, child: const Text('Set')),
+                ],
+              ),
+            ],
+          ),
         ),
-        onSubmitted: (_) => _submit(),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(onPressed: _submit, child: const Text('Set')),
-      ],
     );
   }
 }
@@ -336,23 +425,35 @@ class _Starters extends StatelessWidget {
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           SizedBox(height: tokens.lg),
+          // Phrased as something a person would type, not as a menu. No
+          // ordinals and no list markers: a numbered starter reads as step one
+          // of a form, which is the shape D10 decided against.
           Wrap(
             spacing: tokens.sm,
             runSpacing: tokens.sm,
             children: [
               ActionChip(
-                label: const Text('Tonight'),
-                onPressed: () => onPick(IntakeConstraints(plannedForUtc: tonight)),
+                label: const Text('Tonight, under ₱200'),
+                onPressed: () => onPick(
+                  IntakeConstraints(
+                    plannedForUtc: tonight,
+                    budgetPhpCents: 20000,
+                  ),
+                ),
               ),
               ActionChip(
-                label: const Text('This weekend'),
+                label: const Text('Something this weekend'),
                 onPressed: () =>
                     onPick(IntakeConstraints(plannedForUtc: saturday)),
               ),
+              // The ₱0 path deserves an opener of its own. §9 treats a free
+              // date as a real budget rather than a failure to have one, and
+              // until now nothing on the empty state said so.
               ActionChip(
-                label: const Text('Under ₱200'),
-                onPressed: () =>
-                    onPick(const IntakeConstraints(budgetPhpCents: 20000)),
+                label: const Text('Something free tonight'),
+                onPressed: () => onPick(
+                  IntakeConstraints(plannedForUtc: tonight, budgetPhpCents: 0),
+                ),
               ),
             ],
           ),
