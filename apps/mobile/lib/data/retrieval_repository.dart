@@ -85,9 +85,15 @@ class RetrievalRepository {
   /// rather than in the user's head — and it matches what `build_simple_plan`
   /// already does with the same number, so the two surfaces cannot disagree
   /// about what ₱200 buys.
+  /// [interestSlugs] are `activities.category` values and **rank, never
+  /// filter** — passing none returns the same rows in the server's default
+  /// order, and passing every category returns the same rows too. Only the
+  /// ordering moves. The rule lives in `retrieve_activities`; this is a
+  /// reminder at the one call site that could be tempted to pre-filter.
   Future<List<Activity>> activitiesWithin({
     required int budgetPhpCents,
     required Set<String> ownedResourceIds,
+    Set<String> interestSlugs = const {},
   }) {
     return guard(
       () async {
@@ -96,6 +102,7 @@ class RetrievalRepository {
           params: {
             'p_budget_php_cents': budgetPhpCents ~/ partySize,
             'p_owned_resource_ids': ownedResourceIds.toList(),
+            'p_interests': interestSlugs.toList(),
           },
         );
 

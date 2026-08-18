@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
+import '../../data/profiles_repository.dart';
 import '../../models/intake.dart';
 import '../../theme/app_tokens.dart';
 import '../../ui/error_retry.dart';
@@ -87,11 +88,22 @@ class _IntakeScreenState extends ConsumerState<IntakeScreen> {
   /// wherever a budget is entered it is the main event on that surface. A
   /// bottom sheet rather than a dialog, because the presets and the amount need
   /// room to breathe and a dialog constrains both.
-  Future<int?> _askBudget(int? currentCents) => showModalBottomSheet<int>(
-        context: context,
-        isScrollControlled: true,
-        builder: (context) => _BudgetSheet(currentCents: currentCents),
-      );
+  ///
+  /// **The saved "usual budget" seeds the field, not the constraint.** Writing
+  /// it straight into `IntakeConstraints` would be an inferred value applied
+  /// silently, which §8 forbids — and it would suppress the starter chips,
+  /// since those only show while nothing is established. Opening the sheet on
+  /// their usual number is visible and is correctable before it commits.
+  Future<int?> _askBudget(int? currentCents) {
+    final usual =
+        ref.read(currentProfileProvider).valueOrNull?.usualBudgetPhpCents;
+
+    return showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _BudgetSheet(currentCents: currentCents ?? usual),
+    );
+  }
 
   Future<DateTime?> _askTime(DateTime? currentUtc) async {
     final start = currentUtc == null ? DateTime.now() : toManila(currentUtc);

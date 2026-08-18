@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/profiles_repository.dart';
 import '../../data/resources_repository.dart';
 import '../../data/retrieval_repository.dart';
 import '../../models/activity.dart';
@@ -12,18 +13,28 @@ import '../../models/activity.dart';
 /// because it is a safe-looking default.
 final ideasBudgetProvider = StateProvider<int>((ref) => 200 * 100);
 
-/// Activities that fit the budget and the gear the user actually owns.
+/// Activities that fit the budget and the gear the user actually owns,
+/// ordered with the user's interests first.
 ///
 /// Watches [myResourceIdsProvider], so changing what you own on the resource
 /// picker re-filters this list without anything having to invalidate it by
-/// hand.
+/// hand, and [currentProfileProvider], so saving preferences re-orders it the
+/// same way.
+///
+/// **Interests change the order and never the contents.** The list length is
+/// identical whether the user has expressed none or all of them — that rule is
+/// enforced in `retrieve_activities` and asserted in `ideas_test.dart`.
 final ideasProvider = FutureProvider<List<Activity>>((ref) async {
   final budget = ref.watch(ideasBudgetProvider);
   final owned = await ref.watch(myResourceIdsProvider.future);
+  final profile = await ref.watch(currentProfileProvider.future);
 
   return ref.watch(retrievalRepositoryProvider).activitiesWithin(
         budgetPhpCents: budget,
         ownedResourceIds: owned,
+        interestSlugs: {
+          for (final interest in profile?.interests ?? const {}) interest.slug,
+        },
       );
 });
 

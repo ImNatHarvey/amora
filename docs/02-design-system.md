@@ -437,42 +437,67 @@ community feed, and the reasoning for the distinction is in `HANDOFF.md`.
 there are two, and a two-item bottom bar is worse than none — Material's own
 guidance puts the floor at three. So the bar arrives *with* Profile, not before.
 
-### 10.2 Preferences
+### 10.2 Preferences — BUILT 2026-08-18
 
-Blocked on: a new screen, a `profiles` migration, and — for companion type — the
-persona deferral in `CLAUDE.md` and `00-architecture.md` §11.
+Moved out of "specified, not built". Migrations `20260818121939` and
+`20260818121957`; screen at `lib/features/preferences/preferences_screen.dart`;
+vocabulary in `lib/models/preferences.dart`.
 
-`profiles` today is `id, display_name, city, home_lat, home_lng, created_at,
-onboarded_at`. All three groups below need new columns.
+`profiles` gained `companion_type`, `interests text[]` and
+`usual_budget_php_cents`. Everything here is optional — nothing gates on it, and
+clearing every answer is a supported state.
 
-**Companion type** — single select. `plans.companion_type` already exists and §11
-confirms the column is persona-agnostic, so the storage is ready and the product
-decision is not.
+**Companion type** — single select, and **only `Partner` is offered**.
 
-`Partner` · `Friends` · `Family` · `Solo` · `Group`
+The column's check constraint permits `partner`, `friends`, `family`, `solo` and
+`group`, so widening the persona later is a change to one Dart list rather than a
+migration (`00-architecture.md` §11). But everything past `Partner` *is* persona
+expansion, which D1 scopes out and `CLAUDE.md`'s not-building list names
+explicitly — so the picker offers one value and a test asserts the other four are
+absent.
 
-> ⚠️ Everything past `Partner` is persona expansion, which D1 scopes out and §11
-> defers. Shipping this picker *is* shipping friends and families, whatever the
-> retrieval layer does with it. It cannot be built as a UI change.
+**Interests** — multi select, no minimum. **Rank, never filter.**
 
-**Interests** — multi select, no minimum. Used to rank, never to filter: a user
-who ticks nothing must get the same plans as one who ticks everything, or the
-picker becomes a way to accidentally hide the catalogue.
+A user who ticks nothing must get the same activities as one who ticks
+everything; only the order moves. Enforced in `retrieve_activities` — with no
+interests every row scores the same, so the empty case is not a special case, it
+is the identical query — and asserted from Dart at the provider seam, because the
+way this breaks is a well-meaning pre-filter added to `ideasProvider`.
 
-`Food and coffee` · `Outdoors and nature` · `Arts and crafts` ·
-`Sports and fitness` · `Games` · `Music` · `Photography` · `Films and shows` ·
-`Shopping` · `Faith and community` · `Learning something new` ·
-`Just walking around`
+`Outdoors and nature` · `Food and coffee` · `Cooking together` ·
+`Arts and crafts` · `Sports and fitness` · `Music` · `Games and staying in`
 
-**Usual budget** — single select, and a *default* for the intake chip, never a
-cap. **Per outing for the whole party, not per person** (`00-architecture.md`
-§9).
+> **Seven, not the twelve first specified, and the slug is an
+> `activities.category` value rather than a separate vocabulary.** Ranking
+> happens on `category`, so an interest matching no category could not change a
+> single result. Six of the original twelve — Photography, Films and shows,
+> Shopping, Faith and community, Learning something new, Just walking around —
+> were exactly that: a dead control with a nice label, which is the same defect
+> as the 18 resource rows no activity required.
+>
+> Finer-grained interests need an `activities.tags` column to rank against. That
+> is a real feature and worth doing; it is not a relabelling of this one.
 
-`₱0 — free` · `Under ₱200` · `₱200–₱500` · `₱500–₱1,000` · `₱1,000–₱2,000` ·
-`Over ₱2,000`
+**Usual budget** — single select. A **default for the intake budget chip, never a
+cap**, and **per outing for the whole party** (`00-architecture.md` §9).
 
-Selection styling follows the resource picker: chip grid, `FilterChip`, selected
-state carried by fill and check rather than by colour alone.
+`free` · `₱200` · `₱500` · `₱1,000` · `₱2,000`
+
+> **Amounts, not bands.** The value's only job is to prefill a number, and a band
+> cannot prefill anything without silently choosing a figure from inside itself.
+> There is no top band for the same reason the sheet has no maximum: the picker
+> is a shortcut and the budget sheet still accepts anything typed.
+
+**The saved budget seeds the sheet, not the constraint.** Writing it into
+`IntakeConstraints` would be an inferred value applied silently, which §8
+forbids, and it would suppress the starter chips — those only show while nothing
+is established. Opening the sheet on their usual number is visible and
+correctable before it commits.
+
+Selection styling follows the resource picker: chip grid, `FilterChip` for the
+multi-select, `ChoiceChip` for the single-selects, selected state carried by fill
+and check rather than by colour alone. Re-tapping a selected `ChoiceChip` clears
+it, because every answer here has to be un-answerable.
 
 ### 10.3 Map above the timeline
 

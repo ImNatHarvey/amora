@@ -11,6 +11,7 @@ import '../features/ideas/ideas_screen.dart';
 import '../features/intake/intake_screen.dart';
 import '../features/memory/memory_timeline_screen.dart';
 import '../features/place/place_detail_screen.dart';
+import '../features/preferences/preferences_screen.dart';
 import '../features/plan/add_stop_screen.dart';
 import '../features/plan/plan_detail_screen.dart';
 import '../features/plan/saved_plans_screen.dart';
@@ -48,6 +49,12 @@ abstract final class Routes {
 
   /// What actually happened — Phase 6's timeline of completed outings.
   static const memories = '/memories';
+
+  /// How the user usually plans. Optional everywhere — nothing gates on it.
+  ///
+  /// Top level rather than nested under a profile screen because Gate B has not
+  /// built one yet. It moves under Profile when the nav arrives.
+  static const preferences = '/preferences';
 
   static const devTokens = '/dev/tokens';
 }
@@ -202,6 +209,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.ideas,
         builder: (context, state) => const IdeasScreen(),
+      ),
+      GoRoute(
+        path: Routes.preferences,
+        builder: (context, state) => const PreferencesScreen(),
       ),
       GoRoute(
         path: Routes.devTokens,

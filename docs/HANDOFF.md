@@ -918,6 +918,64 @@ the app and needs no new resources at all.
   to avoid. Recorded as `02-design-system.md` §6's one sanctioned exception to
   "never animate for delight alone".
 
+## Gate A — preferences. Built 2026-08-18.
+
+Two migrations (`20260818121939`, `20260818121957`), one screen, one model file.
+Spec is `02-design-system.md` §10.2, now marked BUILT rather than specified.
+
+**`profiles` gained `companion_type`, `interests text[]`, `usual_budget_php_cents`.**
+RLS untouched — `profiles_select_own` / `profiles_update_own` filter on the
+primary key, and adding columns does not widen a policy that does that.
+
+**Companion type stores five values and offers one.** The check constraint
+permits `partner|friends|family|solo|group` so widening the persona is later a
+change to `CompanionType.offered` rather than a migration (§11). Only `partner`
+is selectable, because offering the rest *is* shipping friends and families
+whatever retrieval does with the value. **There is a test asserting the other
+four are absent** — that test is the thing between "storage is ready" and "the
+feature shipped by accident".
+
+**Interests are `activities.category` slugs, and there are seven, not the twelve
+first specified.** Ranking happens on `category`, so an interest matching no
+category could not change a single result — Photography, Films, Shopping, Faith,
+Learning and Just-walking-around were all exactly that. **Same defect as the 18
+orphan resources, one week apart**, which is why it was caught. Finer interests
+need an `activities.tags` column to rank against; that is a real feature, not a
+relabelling.
+
+**`retrieve_activities` ranks and never filters.** Verified against the live
+database in four directions before the Dart went in: no interests → 33 rows,
+`music` only → 33, every category → 33, a bogus slug → 33, and the music rows
+sort first. Two-argument callers (`build_simple_plan`, `cost_generated_plan`, the
+`generate-plan` Edge Function) still resolve through the default and were not
+touched.
+
+**The saved budget seeds the sheet, not the constraint.** Writing it into
+`IntakeConstraints` would be an inferred value applied silently (§8) *and* would
+suppress the starter chips, since those only render while nothing is
+established. `_askBudget` passes it as the sheet's opening value instead.
+
+**Reachable from home, temporarily.** "How you usually plan" sits below the four
+buttons that do the job — preferences change ordering, never whether the app
+works, so they must not read as a setup step. It moves under Profile at Gate B.
+
+**Gotchas:**
+
+- **`ideas_test.dart` broke the moment Ideas read the profile.** It had no
+  `profilesRepositoryProvider` override, so `currentProfileProvider` reached a
+  real Supabase client and every activity assertion failed with an empty list.
+  Any screen that starts reading the profile needs both that override and
+  `authRepositoryProvider`.
+- **The preferences screen has three sections and a widget-test viewport is
+  800 px.** The budget chips did not exist to tap. Raise
+  `tester.view.physicalSize` — same fix and same reason as `add_stop_screen` and
+  the Phase 6 sheet. Scrolling drags across the chips and starts a gesture.
+- **`{for (final x in ?maybeNull) ...}` does not parse.** The null-aware element
+  marker works on the *element*, not on the iterable of a `for-in`.
+
+138 tests (up from 128), analyze clean, advisors show nothing new. **Not verified
+on the phone** — that pass now owes the splash, the budget sheet and this screen.
+
 ## Review pass, post-Phase-3 — what it found
 
 Run after Phase 3 landed, because three phases had gone in fast. Supabase security

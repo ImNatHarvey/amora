@@ -86,6 +86,15 @@ class HomeScreen extends ConsumerWidget {
                 child: const Text('Your memories'),
               ),
               SizedBox(height: tokens.sm),
+              // Temporary home for preferences until Gate B's Profile tab
+              // exists. Deliberately below the four things that do the job:
+              // preferences change how results are ordered, never whether the
+              // app works, so they must not read as a setup step.
+              OutlinedButton(
+                onPressed: () => context.push(Routes.preferences),
+                child: const Text('How you usually plan'),
+              ),
+              SizedBox(height: tokens.sm),
               OutlinedButton(
                 onPressed: () => context.push(Routes.devTokens),
                 child: const Text('View design tokens'),
