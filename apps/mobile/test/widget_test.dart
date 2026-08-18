@@ -10,6 +10,7 @@ import 'package:mobile/data/resources_repository.dart';
 import 'package:mobile/data/supabase_client_provider.dart';
 import 'package:mobile/main.dart';
 import 'package:mobile/models/profile.dart';
+import 'package:mobile/theme/app_theme.dart';
 import 'package:mobile/theme/app_tokens.dart';
 
 import 'fakes.dart';
@@ -137,6 +138,66 @@ void main() {
       // Owning nothing is a real answer: it still completes onboarding.
       expect(resources.owned, isEmpty);
       expect(profiles.profile!.isOnboarded, isTrue);
+    });
+  });
+
+  group('splash animation', () {
+    // Written in both directions on purpose. A reduced-motion check that only
+    // asserts "reaches opacity 1" passes against a build that never animates at
+    // all, and one that only asserts "starts faded" passes against a build that
+    // ignores the accessibility setting. Neither half is worth anything alone.
+
+    Future<void> pumpSplash(
+      WidgetTester tester, {
+      required bool disableAnimations,
+    }) async {
+      await tester.pumpWidget(
+        MediaQuery(
+          data: MediaQueryData(disableAnimations: disableAnimations),
+          child: MaterialApp(
+            theme: AppTheme.light,
+            home: const StartupSplash(),
+          ),
+        ),
+      );
+    }
+
+    double firstFrameOpacity(WidgetTester tester) =>
+        tester.widget<Opacity>(find.byType(Opacity)).opacity;
+
+    testWidgets('animates in when motion is allowed', (tester) async {
+      await pumpSplash(tester, disableAnimations: false);
+      await tester.pump();
+
+      expect(firstFrameOpacity(tester), lessThan(1));
+
+      // And it finishes — an animation that starts and stalls is worse than
+      // none, because the wordmark would sit permanently half-faded.
+      //
+      // A fixed pump rather than `pumpAndSettle`: the progress indicator is
+      // indeterminate, so it never stops animating and settling never returns.
+      // Same trap as the intake's LinearProgressIndicator, recorded in HANDOFF.
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(firstFrameOpacity(tester), 1);
+    });
+
+    testWidgets('respects the OS reduced-motion setting', (tester) async {
+      // §6. Jumping to the end state is not "no splash" — it is the same
+      // screen, arrived at instantly.
+      await pumpSplash(tester, disableAnimations: true);
+      await tester.pump();
+
+      expect(firstFrameOpacity(tester), 1);
+    });
+
+    testWidgets('the progress indicator does not wait on the animation',
+        (tester) async {
+      // It reports real work. If it faded in with the wordmark, a slow start
+      // would show nothing at all during the frames that matter most.
+      await pumpSplash(tester, disableAnimations: false);
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
   });
 

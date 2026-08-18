@@ -278,6 +278,35 @@ over mobile data, and every dropped frame costs more than the polish gains.
 
 Respect the OS reduced-motion setting.
 
+### The one sanctioned exception: the splash
+
+The startup splash animates for its own sake, which the rule above forbids. It is
+allowed as a named exception rather than left as a contradiction, because the
+first screen is the one place where there is no change to explain and still
+something worth saying.
+
+**It is bound by interruption, not by duration.** `AmoraApp` replaces
+`StartupSplash` the moment startup resolves, and a warm start is well under a
+second — so the animation is *cut off* rather than played. It must therefore look
+deliberate at every frame it might die on. A fade-and-rise does. A draw-on, a
+scale-then-crossfade, or anything with a payoff at the end does not, because the
+payoff is exactly what gets cut.
+
+Holding the splash to a minimum duration would remove the problem and is
+**forbidden**: it delays startup, which is the thing `appStartupProvider` exists
+to avoid.
+
+Rules for it, and for anything that ever joins it here:
+
+- Under 500 ms, and correct at every intermediate frame.
+- Reduced motion renders the **end state**, immediately. Not a shorter animation,
+  and not a blank screen.
+- Nothing reporting real work may sit inside the animation. The progress
+  indicator is outside the fade on purpose: a slow start is precisely when it
+  must already be visible.
+- No asset dependency. It ships before the mascot art exists and must not look
+  broken without it.
+
 ---
 
 ## 7. Design references
@@ -318,7 +347,7 @@ When referencing, be specific about what to take — "the card density from this
       the heaviest thing in the app; it must not load until tapped, and an
       embed-disabled video must offer "open in YouTube" rather than an error
 
-9. Primary UI reference: Brilliant (iOS)
+## 9. Primary UI reference: Brilliant (iOS)
 
 Reference: Brilliant, browsed on Mobbin. Chosen for its register — approachable and generous without being childish, which is the tone Amora needs when asking someone to say out loud that they have ₱100 to spend.
 
@@ -372,3 +401,167 @@ Plan detail with map and timeline. Brilliant has no equivalent. Reference Google
 Storage
 
 Save screenshots to docs/design/references/ with descriptive names, e.g. brilliant-card-density.png, brilliant-spacing-rhythm.png. Mobile screenshots only. When referencing one in a prompt, say what to take from it specifically — "the card density here", not "make it look like this".
+
+---
+
+## 10. Specified, not built
+
+**Nothing in this section exists in the app.** It is written down so the shape is
+agreed before it is built, and so a future session does not re-derive it or,
+worse, half-build it early. Each entry names what blocks it.
+
+Read this section together with `CLAUDE.md`'s "Explicitly NOT building yet" list.
+Where the two disagree, that list wins.
+
+### 10.1 Navigation — a bottom bar that does not exist yet
+
+**Current state, so nobody plans against a fiction: there is no navigation bar.**
+No `NavigationBar`, no `NavigationDestination`, no `StatefulShellRoute` anywhere
+in the app. Home is a `Column` of `FilledButton`s and every route is reached by
+pushing from it.
+
+The target, when nav arrives:
+
+| Order | Destination | Route | Available |
+|---|---|---|---|
+| 1 | Plan | `/intake` | now |
+| 2 | Memories | `/memories` | now |
+| 3 | Profile | — | needs 10.2 |
+| 4 | Feed | — | Phase 7 |
+
+**Feed is added at Phase 7 and not before.** An empty tab makes the app look
+dead, and Phase 7 is a filtered list rather than a feed — `CLAUDE.md` rules out a
+community feed, and the reasoning for the distinction is in `HANDOFF.md`.
+
+**Three destinations is not a milestone to pass through.** Until Profile exists
+there are two, and a two-item bottom bar is worse than none — Material's own
+guidance puts the floor at three. So the bar arrives *with* Profile, not before.
+
+### 10.2 Preferences
+
+Blocked on: a new screen, a `profiles` migration, and — for companion type — the
+persona deferral in `CLAUDE.md` and `00-architecture.md` §11.
+
+`profiles` today is `id, display_name, city, home_lat, home_lng, created_at,
+onboarded_at`. All three groups below need new columns.
+
+**Companion type** — single select. `plans.companion_type` already exists and §11
+confirms the column is persona-agnostic, so the storage is ready and the product
+decision is not.
+
+`Partner` · `Friends` · `Family` · `Solo` · `Group`
+
+> ⚠️ Everything past `Partner` is persona expansion, which D1 scopes out and §11
+> defers. Shipping this picker *is* shipping friends and families, whatever the
+> retrieval layer does with it. It cannot be built as a UI change.
+
+**Interests** — multi select, no minimum. Used to rank, never to filter: a user
+who ticks nothing must get the same plans as one who ticks everything, or the
+picker becomes a way to accidentally hide the catalogue.
+
+`Food and coffee` · `Outdoors and nature` · `Arts and crafts` ·
+`Sports and fitness` · `Games` · `Music` · `Photography` · `Films and shows` ·
+`Shopping` · `Faith and community` · `Learning something new` ·
+`Just walking around`
+
+**Usual budget** — single select, and a *default* for the intake chip, never a
+cap. **Per outing for the whole party, not per person** (`00-architecture.md`
+§9).
+
+`₱0 — free` · `Under ₱200` · `₱200–₱500` · `₱500–₱1,000` · `₱1,000–₱2,000` ·
+`Over ₱2,000`
+
+Selection styling follows the resource picker: chip grid, `FilterChip`, selected
+state carried by fill and check rather than by colour alone.
+
+### 10.3 Map above the timeline
+
+Blocked on: real coordinates. All 15 `places` rows are `test-*` with invented,
+clustered coordinates — a map of them draws one blob with 72 m legs, so the
+layout cannot be judged, let alone accepted.
+
+- Map sits **above** the stop list, not behind it and not on a separate tab.
+- Stops are **numbered**, and the numbers match the timeline exactly. Reference
+  Google Maps directions: numbered pins, a scannable vertical list beneath.
+- **Auto-routed by default.** The user never has to place anything to get a
+  usable plan.
+- A pin is **draggable to adjust**. A drag is a correction to *this plan only* —
+  it must never write back to `places`, which is curated data (invariant 5).
+- Map height is capped so at least one stop row is visible beneath it at 1.3×
+  font scale. A map that fills the viewport hides the thing it is annotating.
+
+**A stop with no place attached** is the case that decides the design, because
+Phase 5 lets users add stops and Ideas produces activities that are not anywhere:
+
+- It appears in the timeline with its number, as normal.
+- It gets **no pin**, and the auto-route draws **through** it without a
+  waypoint — the leg either side connects the nearest stops that do have
+  coordinates.
+- Its timeline row carries a quiet "not on the map" affordance rather than an
+  error. It is not a failure; "watch the sunset" has no address.
+- If **no** stop has coordinates, the map is **absent**, not empty. An empty map
+  of Bocaue is a bare empty state, which §5 forbids.
+
+### 10.4 Price breakdown
+
+Partly blocked. Split deliberately, because one half is buildable and building it
+alone would be a mistake.
+
+Lines, in order: **fares · food · materials · activities · gifts**, then the
+total.
+
+- **Fares need the dormant places layer.** They come from `transit_fares` via
+  `fare_for`, and a leg is only priced once both ends have real barangays.
+- **Materials and activities work today** off `activities` alone.
+
+**Recommendation: do not build the activities-only version.** Invariant 3 says
+the app performs no arithmetic — a breakdown is a *rendering* of what
+`cost_generated_plan` returns, so it cannot ship ahead of the server emitting
+those lines anyway. And fares are the line that matters most: a ₱25 tricycle is
+around 12% of a Bocaue date budget (§12), so a breakdown that omits them teaches
+the wrong shape and is rebuilt the week real places land.
+
+Every amount follows §2's budget colour semantics, including the ₱0 rule: "Total
+free" is right, "fares free" is not.
+
+### 10.5 Shared plan detail — Phase 7
+
+Blocked on: Phase 7, which has not started.
+
+A shared plan renders **itinerary, map and price breakdown** — the same three
+components as an owned plan, and deliberately the same components rather than a
+prettier read-only variant, so there is one renderer to keep correct.
+
+What differs from an owned plan:
+
+- No edit affordances at all — no reorder handle, no ✕, no clock, no "Add a
+  stop".
+- **Prices are the sharer's, and are labelled as such**, with the date they were
+  recorded. A price is a decaying fact (§10.4 doctrine in
+  `00-architecture.md`); presenting last month's total as today's is the failure
+  mode this whole product exists to avoid.
+- "Make this mine" copies it into the viewer's own plans, re-costed at today's
+  prices, rather than letting two users share one row.
+
+It is a **filtered list, not a feed**. Ranking by recency would make people
+optimise for photographs, which costs the price data that makes a shared plan
+worth anything.
+
+### 10.6 A national map of where plans have happened — cut
+
+Proposed as a nav destination showing the Philippines with pins wherever plans
+have happened. **Recommended cut, and recorded here rather than dropped silently
+so it is not re-proposed.**
+
+- **It does not serve the job.** Amora answers "what do we do tonight, under
+  ₱X". A map of where you have already been is retrospective, and `/memories`
+  already answers it for the only geography that holds data.
+- **It advertises the coverage gap as the headline visual.** The app ships
+  nationwide and knows only Bocaue. A map that is 99% empty is a full-screen
+  bare empty state promoted to a permanent nav slot — the exact thing the
+  coverage rules say never to show.
+- **It costs a nav slot** against Plan and Memories, which are the product.
+
+Where it *is* honest: the Phase 9 marketing site, as "here is where Amora
+works". That is positioning rather than a broken feature, and it improves as
+coverage grows instead of mocking it.
