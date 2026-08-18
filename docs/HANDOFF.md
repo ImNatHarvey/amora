@@ -827,6 +827,91 @@ own version, and Phase 6's append-only migration was committed as `…101500` wh
 the database recorded `…095956`. A later `supabase db push` would have tried to
 replay it. Both renamed to match.
 
+## UI direction session — what was built, and the six premises that were wrong
+
+Nat reviewed mockups and brought twelve changes, split by him into buildable and
+specs-only. **Six of the premises did not match the repository**, which moved two
+items out of "buildable". Recorded because the same assumptions will otherwise
+come back:
+
+| Assumed | Actual |
+|---|---|
+| §13 (activities-first vs places) is open | **There is no §13.** `00-architecture.md` ends at §12, and "activities-first" appears nowhere in `docs/`. Confirmed by Nat as an unwritten decision — **still unwritten** |
+| `places` has zero rows | 15, all `test-*` |
+| nav "stays three tabs until Phase 7" | **Zero tabs.** No `NavigationBar` anywhere; home is a `Column` of buttons |
+| starter chips are numbered | already unnumbered |
+| profile screen needs no changes | **there is no profile screen** |
+| preferences groups need expanding | **no preferences screen, and `profiles` has no columns for one** |
+
+**Built: items 1, 4, 5.** Splash animation, starter-chip copy, budget sheet.
+
+**Item 7 (resource catalogue) was NOT built, deliberately.** It is buildable in
+the mechanical sense and was held because of what the catalogue turned out to
+look like — see below. It needs the §13 call first.
+
+**Everything else went into `02-design-system.md` §10, "Specified, not built"**,
+including item 12 recorded as **cut** rather than dropped silently.
+
+### The resource-catalogue finding, which is the reason item 7 is open
+
+**18 of the 30 `resource_catalog` rows are required by no activity.** Orphans:
+`tent`, `camping-gear`, `folding-chairs`, `cooler`, `flashlight`, `grill`,
+`wrapping-paper`, `instant-camera`, `badminton-set`, `volleyball`, `yoga-mat`,
+`playing-cards`, `books`, `gaming-console`, `bluetooth-speaker`, `projector`,
+`motorcycle`, `car`.
+
+`retrieve_activities` filters activities by `required_resource_ids`, so **a
+resource no activity requires cannot change a single result.** It only lengthens
+onboarding. Growing 30 → 50 unpaired would take the picker from 60% dead weight
+to 76%.
+
+So the useful version of item 7 is **resources paired with activities** — and
+adding activities is the activities-first bet, which is exactly the decision §13
+is supposed to hold. Pairing the existing 18 orphans is the cheapest real win in
+the app and needs no new resources at all.
+
+### Decisions taken
+
+- **Item 6 (preferences) is spec-only at full scope**, Nat's call. Companion
+  types beyond `Partner` are persona expansion (§11, and `CLAUDE.md`'s
+  not-building list), so the picker cannot ship as a UI change.
+- **Item 9: the activities-only price breakdown is not worth building.**
+  Invariant 3 means a breakdown renders server output, so it cannot precede it;
+  and omitting fares — ~12% of a Bocaue budget — teaches the wrong shape.
+- **Item 12 (national map) recommended cut.** A 99%-empty map of the Philippines
+  is a bare empty state promoted to a permanent nav slot, which the coverage
+  rules forbid. Belongs on the Phase 9 site.
+
+### Corrections worth not re-making
+
+- **The budget is not per person.** The brief said any custom value "must still
+  respect per-person division"; §9 is the reverse — *prices* are per person,
+  totals multiply by `party_size`, and the user's budget means the whole outing.
+  The sheet now says "For the whole date, not each." on the surface where the
+  number is typed, with a test on the sentence.
+- **Perplexity and Google Flights are web references** and §7 says mobile only.
+  Both ship mobile apps. Noted in `docs/design/references/README.md`.
+- **`docs/design/references/` did not exist** though §7 said it did. Created.
+- **`02-design-system.md` §9's heading had lost its `##`**, so it was invisible
+  to every outline and to `grep "^## "`. Fixed.
+
+### Gotchas from this session
+
+- **`pumpAndSettle` never returns on the splash** — the `CircularProgressIndicator`
+  is indeterminate. Same trap as the intake's `LinearProgressIndicator`. Pump a
+  fixed duration instead.
+- **A `CurvedAnimation` built inside `build` leaks a parent listener every
+  frame.** Hoist it to the `State` and dispose it alongside the controller.
+- **`MediaQuery.disableAnimationsOf` is unavailable in `initState`.** The
+  reduced-motion decision has to happen in `didChangeDependencies`, guarded so it
+  runs once.
+- **The splash animation is bound by interruption, not duration.** `AmoraApp`
+  swaps it out the instant startup resolves, so it is cut off rather than played
+  and must look deliberate at every frame. A minimum-duration hold would fix that
+  and is forbidden — it delays startup, which is what `appStartupProvider` exists
+  to avoid. Recorded as `02-design-system.md` §6's one sanctioned exception to
+  "never animate for delight alone".
+
 ## Review pass, post-Phase-3 — what it found
 
 Run after Phase 3 landed, because three phases had gone in fast. Supabase security
