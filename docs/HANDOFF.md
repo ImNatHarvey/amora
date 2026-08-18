@@ -976,6 +976,58 @@ works, so they must not read as a setup step. It moves under Profile at Gate B.
 138 tests (up from 128), analyze clean, advisors show nothing new. **Not verified
 on the phone** — that pass now owes the splash, the budget sheet and this screen.
 
+## Gate B — profile and the nav bar. Built 2026-08-18.
+
+`lib/app/shell.dart` plus a `StatefulShellRoute.indexedStack` in `router.dart`,
+and `lib/features/profile/profile_screen.dart`. Spec is `02-design-system.md`
+§10.1, now BUILT.
+
+**`HomeScreen` is deleted.** Its entire content was a column of buttons, which
+*was* the navigation — once the bar existed there was nothing left for it to do.
+Non-planning content moved to Profile. **`/` is kept as a redirect to `/intake`**
+rather than removed, so a deep link or an older build's initial location lands
+somewhere real instead of GoRouter's error page. `Routes.home` is now an alias
+for `Routes.intake`, so the redirect ladder did not have to change.
+
+**Three destinations: Plan · Memories · Profile. Feed is Phase 7 and is not
+stubbed**, and there is a test asserting the bar has exactly three and that no
+"Feed" label exists. Three shipped together because Material's floor is three —
+the bar could not arrive with two and grow.
+
+**`indexedStack` rather than one navigator, and this is the load-bearing
+choice.** Each branch keeps its own `Navigator` and state, so switching away
+from a half-finished conversation and back does not reset it. A rebuilt intake
+discards in-flight constraints, and recovering them costs a model call on a tier
+capped at five per minute. There is a test that fills a chip, switches tabs,
+returns, and asserts the chip survived.
+
+**Ideas and saved plans are inside the Plan branch**, so the bar stays and back
+returns to that tab. Plan detail, place detail, add-stop and the plan-request
+form are **outside** the shell — the bar persists across destinations, not across
+every screen.
+
+**Ideas and saved plans moved into the intake app bar**, since the column that
+held them is gone. Ideas is reachable from the filled conversation, not only the
+empty state.
+
+> ⚠️ **The intake app bar now has three actions** — two icons plus the "Use the
+> form" text button. That is the crowding risk to check at 1.3× font scale on
+> the device pass. If it breaks, "Use the form" keeps its words: it is the
+> extraction fallback.
+
+**Gotchas:**
+
+- **`widget_test`'s "fully set up lands on home" asserted `Hello, Nat`**, a
+  string that only ever existed on the home screen. Any test asserting on home
+  copy has to move to a destination.
+- **The 800 px viewport trap hit a third time**, on Profile's sign-out tile.
+  Two cards plus two list tiles overflow it and a `ListView` does not build what
+  is off-screen. Raise `tester.view.physicalSize`; never scroll.
+
+147 tests (up from 138), analyze clean. **Not verified on the phone** — the
+device pass now owes the splash, the budget sheet, preferences, and the whole
+navigation restructure.
+
 ## Review pass, post-Phase-3 — what it found
 
 Run after Phase 3 landed, because three phases had gone in fast. Supabase security

@@ -159,6 +159,24 @@ class _IntakeScreenState extends ConsumerState<IntakeScreen> {
       appBar: AppBar(
         title: const Text('Plan something'),
         actions: [
+          // Ideas and saved plans lost their home when the button column did
+          // (Gate B). Both live in this branch, so the bar stays visible and
+          // back returns here rather than to another tab.
+          //
+          // Ideas has to be reachable from the *filled* conversation too, not
+          // only the empty state — "actually, what could we even do" is a thing
+          // someone thinks halfway through, and an affordance that vanishes
+          // once you start typing is not an affordance.
+          IconButton(
+            onPressed: () => context.push(Routes.ideas),
+            icon: const Icon(Icons.lightbulb_outline),
+            tooltip: 'Find something to do',
+          ),
+          IconButton(
+            onPressed: () => context.push(Routes.plans),
+            icon: const Icon(Icons.bookmark_outline),
+            tooltip: 'Your plans',
+          ),
           // The Phase 2 form, kept reachable. It is the fallback when
           // extraction fails and the only way to exercise retrieval with no
           // model in the loop — so it must not be dev-only.

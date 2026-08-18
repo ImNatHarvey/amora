@@ -78,7 +78,11 @@ void main() {
       expect(find.text('What do you already have?'), findsOneWidget);
     });
 
-    testWidgets('fully set up lands on home', (tester) async {
+    testWidgets('fully set up lands on the Plan tab', (tester) async {
+      // Was "lands on home" and asserted "Hello, Nat". Home is gone as of
+      // Gate B — its entire content was a column of buttons, which was the
+      // navigation, so once the bar existed there was nothing left for it to
+      // do. A finished user now lands on the first destination.
       await tester.pumpWidget(
         _app(
           auth: FakeAuthRepository(userId: 'user-1'),
@@ -89,7 +93,75 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Hello, Nat'), findsOneWidget);
+      expect(find.text('Plan something'), findsOneWidget);
+      expect(find.byType(NavigationBar), findsOneWidget);
+    });
+  });
+
+  group('navigation bar', () {
+    Future<void> pumpSignedIn(WidgetTester tester) async {
+      await tester.pumpWidget(
+        _app(
+          auth: FakeAuthRepository(userId: 'user-1'),
+          profiles: FakeProfilesRepository(
+            profile: _profile(city: 'Bocaue', onboardedAt: DateTime.utc(2026)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('has exactly three destinations, and Feed is not one',
+        (tester) async {
+      // Feed arrives at Phase 7 and is deliberately not stubbed: an empty tab
+      // makes the app look dead, and CLAUDE.md rules out a community feed
+      // outright. This test is what stops it appearing early as a placeholder.
+      await pumpSignedIn(tester);
+
+      final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+      expect(bar.destinations, hasLength(3));
+
+      expect(find.text('Plan'), findsOneWidget);
+      expect(find.text('Memories'), findsOneWidget);
+      expect(find.text('Profile'), findsOneWidget);
+      expect(find.text('Feed'), findsNothing);
+    });
+
+    testWidgets('switching tabs reaches the other destinations',
+        (tester) async {
+      await pumpSignedIn(tester);
+
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      expect(find.text('How you usually plan'), findsOneWidget);
+
+      await tester.tap(find.text('Plan'));
+      await tester.pumpAndSettle();
+      expect(find.text('Plan something'), findsOneWidget);
+    });
+
+    testWidgets('each branch keeps its own state across a switch',
+        (tester) async {
+      // The reason for StatefulShellRoute.indexedStack rather than one
+      // navigator: switching away from a half-finished conversation and back
+      // must not reset it. A rebuilt intake would throw away in-flight
+      // constraints, and recovering them costs a model call on a tier capped
+      // at five requests a minute.
+      await pumpSignedIn(tester);
+
+      await tester.tap(find.text('Something this weekend'));
+      await tester.pumpAndSettle();
+      expect(find.text('How much?'), findsOneWidget);
+
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      expect(find.text('How much?'), findsNothing);
+
+      await tester.tap(find.text('Plan'));
+      await tester.pumpAndSettle();
+
+      // Still there — the chip survived the round trip.
+      expect(find.text('How much?'), findsOneWidget);
     });
   });
 

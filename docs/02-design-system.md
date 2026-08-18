@@ -413,29 +413,61 @@ worse, half-build it early. Each entry names what blocks it.
 Read this section together with `CLAUDE.md`'s "Explicitly NOT building yet" list.
 Where the two disagree, that list wins.
 
-### 10.1 Navigation — a bottom bar that does not exist yet
+### 10.1 Navigation — BUILT 2026-08-18
 
-**Current state, so nobody plans against a fiction: there is no navigation bar.**
-No `NavigationBar`, no `NavigationDestination`, no `StatefulShellRoute` anywhere
-in the app. Home is a `Column` of `FilledButton`s and every route is reached by
-pushing from it.
+Moved out of "specified, not built". `lib/app/shell.dart`, wired through
+`StatefulShellRoute.indexedStack` in `lib/app/router.dart`.
 
-The target, when nav arrives:
-
-| Order | Destination | Route | Available |
+| Order | Destination | Route | Status |
 |---|---|---|---|
-| 1 | Plan | `/intake` | now |
-| 2 | Memories | `/memories` | now |
-| 3 | Profile | — | needs 10.2 |
-| 4 | Feed | — | Phase 7 |
+| 1 | Plan | `/intake` | built |
+| 2 | Memories | `/memories` | built |
+| 3 | Profile | `/profile` | built |
+| 4 | Feed | — | **Phase 7. Not stubbed.** |
 
-**Feed is added at Phase 7 and not before.** An empty tab makes the app look
-dead, and Phase 7 is a filtered list rather than a feed — `CLAUDE.md` rules out a
-community feed, and the reasoning for the distinction is in `HANDOFF.md`.
+**Feed is not a placeholder.** An empty or disabled fourth tab makes the app
+look dead, and Phase 7 is a filtered list rather than a community feed, which
+`CLAUDE.md`'s not-building list rules out. A test asserts the bar has exactly
+three destinations and that no "Feed" label exists — that assertion is what
+stops it arriving early as a stub.
 
-**Three destinations is not a milestone to pass through.** Until Profile exists
-there are two, and a two-item bottom bar is worse than none — Material's own
-guidance puts the floor at three. So the bar arrives *with* Profile, not before.
+**Three shipped at once, with Profile.** Material's floor is three destinations,
+so the bar could not arrive with Plan and Memories alone and grow later.
+
+**Home is gone.** `HomeScreen`'s entire content was a column of buttons, which
+*was* the navigation — once the bar existed there was nothing left for it to do.
+Its non-planning content (greeting, owned-resource count, preferences, token
+gallery, sign out) moved to Profile. `/` is kept as a redirect to `/intake`
+rather than deleted, so a deep link or an older build's initial location lands
+somewhere real instead of on GoRouter's error page.
+
+**`indexedStack`, not one navigator.** Each branch keeps its own `Navigator` and
+its own state, so switching away from a half-finished conversation and back does
+not reset it. A rebuilt intake would discard in-flight constraints, and
+recovering them costs a model call on a tier capped at five requests a minute.
+There is a test that fills a chip, switches tabs, returns, and asserts the chip
+survived.
+
+**What is in a branch and what is not.** Ideas and saved plans sit *inside* the
+Plan branch: they are places you go while planning, so the bar stays and back
+returns to that tab. Plan detail, place detail, add-stop and the plan-request
+form sit **outside** the shell — Material persists the bar across top-level
+destinations, not across every screen.
+
+**Tapping the active destination returns to its root**
+(`goBranch(initialLocation: index == currentIndex)`), which is what a user
+reaches for when they are three screens deep and want out.
+
+**Ideas and saved plans moved into the intake app bar**, since the button column
+that used to hold them is gone. Ideas is reachable from the *filled*
+conversation too, not only the empty state: "what could we even do" is a thought
+someone has halfway through, and an affordance that disappears once you start
+typing is not an affordance.
+
+> ⚠️ **Three app-bar actions is the known risk on this screen** — two icons plus
+> the "Use the form" text button. Verify at 1.3× font scale before calling it
+> done; if it crowds, "Use the form" is the one that has to keep its words,
+> because it is the extraction fallback.
 
 ### 10.2 Preferences — BUILT 2026-08-18
 
