@@ -1763,3 +1763,73 @@ admission for a stranger.
 
 User-submitted stops stay what Phase 5 already says they are: **a way to add a
 missing stop inside a covered city**, not a coverage strategy.
+
+---
+
+## 13. Withdrawn: activities-first
+
+**Status: withdrawn 2026-08-18, by Nat, before it was ever written down.**
+Recorded here rather than dropped, so it is not re-proposed as a fresh idea.
+
+### What it was
+
+A proposal to lead the product with **activities** rather than **places** —
+deepening the layer that needs no fieldwork (`activities`, 16 generic rows, plus
+`resource_catalog`) and letting the curated catalogue stay thin. In practice it
+would have meant growing activities and resources as the primary investment and
+treating `places` as a later concern.
+
+It surfaced during a UI direction session as a constraint on other work ("do not
+resolve §13 by building around it"), which is how a decision nobody had written
+down came to be blocking two items.
+
+### Why it is withdrawn
+
+Nat's own reasoning, kept in his framing because it is the part that matters:
+
+> It existed because I didn't want to do fieldwork. But `places` has 15 rows and
+> the pipeline works end to end, so nothing is actually blocked. The test rows
+> are a known data gap, not an architecture problem.
+
+That is the correct diagnosis, and it is worth naming the failure mode: **a
+distaste for one kind of work had begun to express itself as an architectural
+position.** Activities-first was never argued on merit — no one claimed
+activities make a better product than places. It was a route around
+`DESK-CHECKLIST.md`. Once that is visible, there is nothing left to decide.
+
+The supporting facts:
+
+- **The pipeline is proven.** Phase 3's three criteria were met on 2026-08-12 —
+  20 generations, zero invalid IDs, 58/58 totals independently recomputed. That
+  is the architecture working, on placeholder data.
+- **Nothing is blocked by the data gap.** Every phase of the MVP is built. What
+  the 15 `test-*` rows prevent is *acceptance*, not construction, and acceptance
+  is supposed to wait for real data.
+- **The moat is the catalogue (D3).** Activities are generic by definition — any
+  chatbot can suggest a picnic. Leading with them would mean investing in the
+  half of the product that is not defensible.
+
+### What this changes
+
+**Nothing structural.** D3 and invariant 1 stand exactly as written; no schema
+moves, no phase is renumbered, no code is affected. §12's scope boundary is
+untouched.
+
+**Phase 2's acceptance criterion stays open**, pending real places. That is an
+honest open item, not a blocker on anything else, and it should not be closed by
+redefining what Phase 2 is for.
+
+**Item 7's resource-catalogue work is unblocked**, and its shape changed as a
+result: 18 of 30 `resource_catalog` rows were required by no activity, so growing
+the catalogue would have lengthened onboarding without changing a single
+retrieval result. Pairing orphans to activities is the version that does
+something.
+
+### One consequence, so it is not misread later
+
+`HANDOFF.md` says Home leads with `/ideas` "because it is the button that works".
+That sentence predates this withdrawal and reads like activities-first doctrine.
+It is not. **It is a statement about the current data, not about the product's
+direction** — `retrieve_activities` needs no curated place, so Ideas is what can
+be demonstrated today. When the catalogue lands, that ordering is expected to be
+revisited on its merits, and doing so is not a reversal of anything.

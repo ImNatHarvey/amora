@@ -78,6 +78,12 @@ that works; "Plan something" is still there and still needs the catalogue. Detai
 in `00-architecture.md` §8 under Phase 2 — including the line it must not cross,
 which is that Ideas answers *what* and never *where*.
 
+> **That ordering is a fact about the data, not a product direction**, and the
+> distinction matters now that §13 is withdrawn. Ideas leads because it is what
+> can be demonstrated on placeholder places — not because activities are the
+> product. When the catalogue lands, revisit the ordering on its merits; doing so
+> reverses nothing.
+
 **What to check when the phone is back on**, in one pass, dark mode at 1.3× font
 scale: `/ideas`, `/plan-request`, the `/intake` conversation, a saved plan
 (drag-to-reorder, the clock, ✕, "Add a stop"), **"We did this" through to a photo
@@ -836,7 +842,7 @@ come back:
 
 | Assumed | Actual |
 |---|---|
-| §13 (activities-first vs places) is open | **There is no §13.** `00-architecture.md` ends at §12, and "activities-first" appears nowhere in `docs/`. Confirmed by Nat as an unwritten decision — **still unwritten** |
+| §13 (activities-first vs places) is open | There was no §13 — the doc ended at §12 and "activities-first" appeared nowhere in `docs/`. Confirmed by Nat as an unwritten decision, then **withdrawn 2026-08-18**. Now written up as `00-architecture.md` §13, recorded as withdrawn so it is not re-proposed |
 | `places` has zero rows | 15, all `test-*` |
 | nav "stays three tabs until Phase 7" | **Zero tabs.** No `NavigationBar` anywhere; home is a `Column` of buttons |
 | starter chips are numbered | already unnumbered |
@@ -1300,9 +1306,35 @@ inside its origin with every leg a walk and `fare_for` never called: the exact
 failure the spread section exists to prevent. The rule that fixes it is **one
 barangay with no more than 2 places, and start the acceptance run there.**
 
-**Real:** `resource_catalog` (30 rows) and `transit_fares` (15 real barangay
+**Real:** `resource_catalog` (31 rows) and `transit_fares` (15 real barangay
 routes — Poblacion, Turo, Bunlo, Lolomboy, Duhat, Wakas, Batia, plus Marilao and
-Balagtas). `activities` (16) are generic and fine.
+Balagtas). `activities` (33) are generic and fine.
+
+> **The catalogue was re-shaped on 2026-08-18, not grown.** 18 of the 30
+> resources were required by no activity, and `retrieve_activities` filters by
+> `required_resource_ids <@ p_owned_resource_ids` — so **a resource no activity
+> requires cannot change a single result.** It only lengthened onboarding.
+>
+> 15 orphans were paired to one new activity each; `camping-gear` was retired as
+> a duplicate of `tent` (zero owners, so nothing cascaded); and two resources were
+> added because pairing revealed real gaps — `videoke-machine` and `guitar`.
+>
+> **`car` and `motorcycle` are still orphaned, deliberately.** They belong to the
+> **legs** layer, not the activities layer: someone with a car should not be
+> quoted a tricycle fare. Inventing "Sunset ride" would have paired the rows and
+> left the real modelling error in place. Making `fare_for` aware of owned
+> transport is its own change and touches money, so invariant 3 makes it a server
+> change rather than a seed one.
+>
+> Verified in both directions after applying: owning nothing returns **6**
+> activities (those requiring none), owning everything returns **33**, and owning
+> only `projector` returns **7** — exactly one unlocked. A `guitar` owner sees
+> "Learn a song together" and *not* "Videoke night", so containment is not
+> over-broad.
+>
+> **Design rule for any future pairing: require only the resource the activity is
+> impossible without.** Every listed resource must be owned, so requiring a
+> nice-to-have silently hides the activity.
 
 > ⚠️ **`transit_fares.is_per_person` is `true` on all 15 rows, and on the 9
 > tricycle rows that is an unverified default rather than a finding.** The column
