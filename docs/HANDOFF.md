@@ -2,7 +2,7 @@
 
 Context bridge for fresh sessions. Everything structural lives in
 `00-architecture.md` and `02-design-system.md` — this file is only what those
-don't say. Last updated for the Phase 6 commit.
+don't say. Last updated for the Gate C commit.
 
 ## Where we are
 
@@ -13,8 +13,14 @@ here and a shippable MVP is **data and a phone**, not development.
 Phases 0 and 1 are complete and accepted on device. Phase 3b was **accepted
 2026-08-10**, and **Phase 3's three criteria were all met on 2026-08-12** — 20
 generations with zero invalid IDs, a cache hit, and 58/58 totals recomputed
-independently. **Phases 2 and 4 are code complete and neither is accepted**; see
-the ledger below for what is outstanding and why.
+independently. **Re-run on 2026-08-19 after Gate C: 20/20, 60/60.** **Phases 2
+and 4 are code complete and neither is accepted**; see the ledger below for what
+is outstanding and why.
+
+Since then, four gates off the UI-direction session: A (preferences), B
+(navigation), C (the price breakdown, which fixed a live bug where activity
+budgets reached no plan total). D — the map — is next and is blocked on real
+coordinates, like everything else.
 
 > Phase 3 passing is narrower than it sounds and the distinction matters: it
 > proves the *pipeline* holds — the model never named a place outside the
@@ -1028,6 +1034,159 @@ empty state.
 device pass now owes the splash, the budget sheet, preferences, and the whole
 navigation restructure.
 
+## Gate C — the price breakdown. Built 2026-08-19.
+
+Spec is `02-design-system.md` §10.4, now BUILT. The money rules are
+`00-architecture.md` §9.
+
+### Two migrations were live in the database and in no commit
+
+**Read this first; it is the most reusable thing in this section.** A session on
+2026-08-18 applied `20260818125746_gate_c_cost_line_for_place` and
+`20260818125849_gate_c_cost_activities_and_emit_lines` through MCP, then never
+committed them. Gate B was built and committed afterwards, so the orphans sat
+between two commits with nothing pointing at them. Everything else matched.
+
+Both were **recovered verbatim** from `supabase_migrations.schema_migrations`
+and committed as files, checked byte-for-byte with `md5(array_to_string(
+statements, E'\n'))` against the same digest computed on disk. Every Gate C
+migration was checked the same way.
+
+> **`apply_migration` stamps its own version and the ledger is the only record
+> of what ran.** After every apply: read the stamped version back, rename the
+> local file to match, and diff the file against the stored statements. That is
+> now three separate incidents from the same cause — the stale deployed
+> `generate-plan` bundle, the two mismatched Phase 6 filenames, and this.
+
+### What the orphaned work got right, and the two things it got wrong
+
+Kept: the **five-line breakdown** and `cost_line_for_place`. An earlier reading
+of §10.4 in this session claimed food and gifts "cannot be sourced" because
+`places.category` is free text — **that was wrong**, and the orphan answered it:
+the mapping defaults to `activities`, so an unmapped category lands somewhere
+rather than being dropped, and the five lines still sum to the total.
+
+Replaced, both about activity money:
+
+- **It added every attached activity's budget at `min_budget × party`.** So
+  `cafe-hopping` (₱200pp) on top of a ₱180 café charged a couple ~₱760 for one
+  afternoon — the place price already *is* that money.
+- **It split materials from activities on `is_diy`**, which answers "is there a
+  tutorial" rather than "where does the money go", and misfiled
+  `pack-a-cooler` and `instant-photo-hunt` (both materials, both
+  `is_diy = false`). It also cannot express the venue case at all.
+
+Its own comment had already named the gap — *"if it matters, activities needs
+that column too"*. It matters. `cost_kind` and `budget_is_per_person` are that
+column, and `is_diy` no longer decides any money.
+
+### The shape now
+
+`activities` gained `cost_kind` (`materials` | `venue`) and
+`budget_is_per_person`. Both composers **and** `read_plan` emit
+`totals.lines` — five keys summing to `total_php_cents` — plus
+`activities_php_cents`, and every stop carries `activity_price_php_cents`.
+
+**`read_plan` was the hole worth closing.** Only `cost_generated_plan` emitted
+lines, so saving a plan and reopening it silently changed the payload shape: the
+breakdown you tapped Save on did not come back. Nothing crashed only because
+Dart did not read those keys yet.
+
+**Materials money is stored on `plan_items.activity_cost_php_cents`; place lines
+are derived at read time.** Deliberately asymmetric. `write_plan_stops` is the
+one recompute path, and re-deriving the activity budget in `read_plan` would let
+a later edit to `min_budget_php_cents` retroactively rewrite the cost of an
+outing somebody already had. A place's *category*, though, belongs to the place,
+so recategorising one place should fix every breakdown that mentions it.
+
+### Verified
+
+- **In SQL, in both directions**, against a ₱150pp café: `bake-something`
+  (₱200pp, per-party) adds **₱200 not ₱400**; `pack-a-cooler` (₱100pp,
+  per-person) adds **₱200**; `cafe-hopping` adds **nothing** and leaves the
+  total identical to the no-activity case. The two per-party/per-person cases
+  landing on the same ₱200 is a coincidence of the seed data, but it still
+  discriminates: ignoring the flag gives ₱400 on one and ₱100 on the other.
+- **Round trip**: generate → `save_plan` → `read_plan` returns identical `lines`
+  and total. Run inside a `do $$ … raise exception $$` so it rolls back and
+  leaves no test plan behind — worth reusing.
+- **Acceptance re-run**: 20/20, zero refused, 10 fresh then 10 cache, 60 plans.
+  `verify-totals.mjs` recomputes places, fares, materials, the five lines and
+  the total independently in Node: **60/60 on all five**.
+
+> **The first re-run's materials check was vacuous, and fixing the harness is
+> the reusable lesson here.** It reported 60/60 while every plan's materials was
+> ₱0 — the harness sent no `owned_resource_ids`, `retrieve_activities` filters
+> on `required_resource_ids <@ owned`, and every *priced* activity requiring
+> nothing is `venue`. So it compared 0 to 0 sixty times and called it a pass.
+> The harness now owns the whole catalogue, fetched at runtime rather than
+> hardcoded to this project's uuids.
+>
+> **Check what a green criterion actually touched**, the same way the cache-hit
+> count had to be read rather than the pass. A criterion that cannot fail is not
+> evidence.
+
+What the two runs covered between them, both against the independent Node
+recomputation:
+
+| Branch | Coverage |
+|---|---|
+| venue adds nothing | **36 pairings** — `street-food-crawl` ×26, `cafe-hopping` ×10. The old code would have added ₱6,600 of double-counting across the run |
+| materials, per-party | **10 pairings** — `diy-paper-flowers` ×4 (₱50), `instant-photo-hunt` ×6 (₱100), ₱800 total. Ignoring the flag would have made it ₱1,600 |
+| materials, per-person | SQL assertion only; no per-person materials activity was paired in 60 plans |
+
+`instant-photo-hunt` is `is_diy = false`, so those six pairings are exactly the
+rows the old split misfiled onto the activities line — the defect was live, not
+theoretical.
+
+`retrieve_activities` now returns `cost_kind` and `budget_is_per_person`, which
+is a return-type change, so the three-argument signature was dropped and the
+revoke/grant reissued. **Gate A's invariant was re-verified afterwards**: 33
+rows for no interests, one interest, every category and a bogus slug alike; 6
+owning nothing; music first.
+
+The prompt shows materials cost against materials activities only — quoting a
+venue budget would push the model away from something the place price already
+covers. Invariant 1 is untouched: retrieved data going in, and every peso still
+computed by `cost_generated_plan` coming out.
+
+**`generate-plan` is deployed at v7 and the bundle was read back and diffed
+against disk.** The CLI still has no auth, so this went through MCP.
+
+**`csv_to_sql.mjs`: `sqlBool` is now strict.** It silently coerced anything that
+was not `true` to `false`, which for `budget_is_per_person` would have halved a
+materials budget with nothing saying so. Every boolean in every seed CSV was
+already exactly `true`/`false`, so nothing changed; a typo now fails with file
+and line. `cost_kind` is validated the same way. Both were negative-tested.
+
+**Left alone, deliberately: Phase 6 actuals exclude materials.** `complete_plan`
+builds `memories.actual_spend_php_cents` from per-stop reports plus fares, and
+materials are bought at a shop that is not a stop — so a plan with materials
+reports actual spend below its own estimate, systematically. §10.5's medians
+compare `place_reports.reported_cost` against `places.price_min` **per stop**,
+so the correction loop is unaffected and the wrong figure is a display one.
+Fixing it means a new field on the Phase 6 completion sheet, which is that
+phase's file and its own call.
+
+**Gotcha:** old `plan_cache` payloads have no `lines` key and stay valid until
+`places_version()` moves, so `PlanTotals.lines` is **nullable** and
+`costBreakdownLine` falls back to the old `places · fares` summary. Deriving the
+missing lines on the device instead would be the app doing money arithmetic.
+
+**`activity_price_php_cents` is sent per stop and deliberately not parsed in
+Dart.** It was, briefly, and removing it was the right call: `stopFacts` reads
+`cafe · Poblacion · ₱60–₱120 each · 10:00–21:00`, where the "each" is
+load-bearing, and the materials figure is a **party** total. Putting the two on
+one line unqualified is the per-person/party confusion §9 exists to prevent, and
+qualifying it properly makes a dense line longer. Plan-level materials is
+unambiguous and already there. Per-stop presentation belongs to Gate D, with the
+design system open. The reasoning is in `simple_plan.dart` beside where the
+field would go, so the next session finds it before re-adding one.
+
+156 tests (up from 147), analyze clean, 30 Deno tests green. **Not verified on
+the phone** — the device pass now owes the splash, the budget sheet,
+preferences, the navigation restructure and this breakdown.
+
 ## Review pass, post-Phase-3 — what it found
 
 Run after Phase 3 landed, because three phases had gone in fast. Supabase security
@@ -1419,6 +1578,12 @@ barangay with no more than 2 places, and start the acceptance run there.**
 **Real:** `resource_catalog` (31 rows) and `transit_fares` (15 real barangay
 routes — Poblacion, Turo, Bunlo, Lolomboy, Duhat, Wakas, Batia, plus Marilao and
 Balagtas). `activities` (33) are generic and fine.
+
+> **Since Gate C each activity carries `cost_kind` and `budget_is_per_person`**,
+> which decide whether its budget reaches a plan total at all and whether party
+> size multiplies it (`00-architecture.md` §9). Both are mandatory columns in
+> `activities.csv`; the importer refuses an unrecognised `cost_kind` with a
+> file and line rather than letting the check constraint fail mid-apply.
 
 > **The catalogue was re-shaped on 2026-08-18, not grown.** 18 of the 30
 > resources were required by no activity, and `retrieve_activities` filters by

@@ -559,27 +559,58 @@ Phase 5 lets users add stops and Ideas produces activities that are not anywhere
 - If **no** stop has coordinates, the map is **absent**, not empty. An empty map
   of Bocaue is a bare empty state, which §5 forbids.
 
-### 10.4 Price breakdown
+### 10.4 Price breakdown — BUILT 2026-08-19
 
-Partly blocked. Split deliberately, because one half is buildable and building it
-alone would be a mistake.
+Moved out of "specified, not built". Lines, in order: **fares · food · materials
+· activities · gifts**, then the total — as originally specified, and all five
+now have a table behind them.
 
-Lines, in order: **fares · food · materials · activities · gifts**, then the
-total.
+**The five sum to the total exactly.** That is the property, not a nicety: a
+breakdown whose parts do not account for the whole is decoration. It is asserted
+in SQL and re-checked independently in Node by
+`supabase/functions/generate-plan/verify-totals.mjs`.
 
-- **Fares need the dormant places layer.** They come from `transit_fares` via
-  `fare_for`, and a leg is only priced once both ends have real barangays.
-- **Materials and activities work today** off `activities` alone.
+Where each line comes from:
 
-**Recommendation: do not build the activities-only version.** Invariant 3 says
-the app performs no arithmetic — a breakdown is a *rendering* of what
-`cost_generated_plan` returns, so it cannot ship ahead of the server emitting
-those lines anyway. And fares are the line that matters most: a ₱25 tricycle is
-around 12% of a Bocaue date budget (§12), so a breakdown that omits them teaches
-the wrong shape and is rebuilt the week real places land.
+| Line | Source |
+|---|---|
+| fares | `transit_fares` via `fare_for` |
+| food | place price, where `places.category` is cafe / food / restaurant / market / bakery |
+| gifts | place price, where the category is florist / vendor / gift |
+| activities | place price, every other category — **the default, so nothing is dropped** |
+| materials | `activities.min_budget_php_cents` where `cost_kind = 'materials'` |
+
+`public.cost_line_for_place` owns the category mapping so `build_simple_plan`,
+`cost_generated_plan` and `read_plan` cannot disagree. Its default is
+`activities` deliberately rather than as a fallthrough — a court fee, a park
+entry or a paid viewpoint is money spent in order to do something — and because
+a category nobody has mapped yet must still land somewhere. `places.category` is
+free text and real data will widen it; a default is what stops that silently
+losing pesos.
+
+**Materials is the only activity money that appears**, because it is the only
+activity money that is additive. An activity whose budget is spent *at* the
+paired place (`cost_kind = 'venue'`: café hopping, a street-food crawl) adds
+nothing, since that money is already the place's own price. Counting both
+charged a couple roughly double for one afternoon. See `00-architecture.md` §9.
+
+**Rendering rule: fares always shows, even at ₱0; the other four appear only
+when they are something.** Not an inconsistency — every outing involves getting
+there, so a zero fare is a priced fact worth stating, while a plan with no
+florist has no gifts line to state. Four permanent `₱0`s would bury the two
+lines carrying the plan. `costBreakdownLine` in
+`lib/features/plan_request/plan_parts.dart` is a pure function so that rule can
+be tested without a render tree.
 
 Every amount follows §2's budget colour semantics, including the ₱0 rule: "Total
 free" is right, "fares free" is not.
+
+> **The earlier recommendation here was "do not build the activities-only
+> version", and it has been met rather than overridden.** Both its objections
+> were about *order*: that a breakdown is a rendering of server output so it
+> cannot precede it, and that omitting fares teaches the wrong shape. The server
+> emits all five lines first, and fares is among them. Recorded because the
+> reasoning stays correct and would apply again to the next half-built surface.
 
 ### 10.5 Shared plan detail — Phase 7
 

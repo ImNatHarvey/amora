@@ -99,6 +99,21 @@ class PlanStop {
   /// show both without multiplying anything itself.
   final int partyPricePhpCents;
 
+  // The server also sends `activity_price_php_cents` per stop — what the
+  // attached activity's materials add here, for the party. It is deliberately
+  // NOT parsed yet, because there is nowhere honest to put it.
+  //
+  // `stopFacts` reads `cafe · Poblacion · ₱60–₱120 each · 10:00–21:00`, and
+  // that "each" is load-bearing: stopPrice's own doc explains that a per-person
+  // price and a party total must never sit side by side unlabelled, because
+  // they read as a contradiction. The materials figure is a party total, so
+  // dropping it into that line unqualified is exactly the mistake §9 exists to
+  // prevent, and qualifying it properly makes an already dense line longer.
+  //
+  // The breakdown carries materials at plan level, where it is unambiguous, so
+  // nothing is currently wrong — only less granular. Per-stop presentation is
+  // Gate D's territory and the wording deserves that pass rather than this one.
+
   /// Straight-line from the plan's origin, not from the previous stop, and not
   /// road distance. [PlanLeg.distanceM] is the stop-to-stop figure.
   final int distanceFromOriginM;
@@ -169,6 +184,52 @@ class PlanLeg {
   List<PlanLeg> get segments => [this];
 }
 
+/// The price breakdown, as the server computed it.
+///
+/// Five lines that sum to [PlanTotals.totalPhpCents] exactly — that property is
+/// the whole point, and it is asserted server-side and re-checked independently
+/// by `verify-totals.mjs`. A breakdown whose parts do not account for the whole
+/// is decoration.
+///
+/// Nothing here is derived on the device. Invariant 3 keeps money arithmetic in
+/// Postgres, so the UI prints these and never sums, subtracts or reconciles
+/// them.
+class CostLines {
+  const CostLines({
+    required this.faresPhpCents,
+    required this.foodPhpCents,
+    required this.materialsPhpCents,
+    required this.activitiesPhpCents,
+    required this.giftsPhpCents,
+  });
+
+  factory CostLines.fromMap(Map<String, dynamic> map) => CostLines(
+        faresPhpCents: map['fares'] as int? ?? 0,
+        foodPhpCents: map['food'] as int? ?? 0,
+        materialsPhpCents: map['materials'] as int? ?? 0,
+        activitiesPhpCents: map['activities'] as int? ?? 0,
+        giftsPhpCents: map['gifts'] as int? ?? 0,
+      );
+
+  /// Every recorded fare on the plan. Unpriced legs are absent, not zero — see
+  /// [PlanTotals.isComplete].
+  final int faresPhpCents;
+
+  /// Spent at places that sell food: cafes, carinderias, the market.
+  final int foodPhpCents;
+
+  /// Bought beforehand for an attached activity — ingredients, film, card
+  /// stock. Never venue spend, which the place's own price already carries.
+  final int materialsPhpCents;
+
+  /// Paid to be somewhere in order to do something: court fees, park entry, a
+  /// paid viewpoint. The default line, so no peso is ever dropped.
+  final int activitiesPhpCents;
+
+  /// Spent at florists and vendors.
+  final int giftsPhpCents;
+}
+
 /// What a plan costs, and how much of that we can actually vouch for.
 class PlanTotals {
   const PlanTotals({
@@ -177,6 +238,8 @@ class PlanTotals {
     required this.totalPhpCents,
     required this.unpricedLegs,
     required this.isComplete,
+    this.activitiesPhpCents = 0,
+    this.lines,
   });
 
   factory PlanTotals.fromMap(Map<String, dynamic> map) => PlanTotals(
@@ -185,6 +248,11 @@ class PlanTotals {
         totalPhpCents: map['total_php_cents'] as int,
         unpricedLegs: map['unpriced_legs'] as int,
         isComplete: map['is_complete'] as bool,
+        activitiesPhpCents: map['activities_php_cents'] as int? ?? 0,
+        lines: switch (map['lines']) {
+          final Map<String, dynamic> raw => CostLines.fromMap(raw),
+          _ => null,
+        },
       );
 
   /// Sum of each stop's cheapest realistic cost.
@@ -193,8 +261,24 @@ class PlanTotals {
   /// Sum of the fares we have actually recorded.
   final int faresPhpCents;
 
-  /// [placesPhpCents] + [faresPhpCents].
+  /// What attached activities add: materials bought before the date.
+  ///
+  /// Zero for a plan built by the Phase 2 composer, which pairs no activities,
+  /// and zero for an activity whose budget is venue spend — that money is the
+  /// paired place's price and is already inside [placesPhpCents]. Counting it
+  /// twice charged a couple roughly double for one afternoon.
+  final int activitiesPhpCents;
+
+  /// [placesPhpCents] + [faresPhpCents] + [activitiesPhpCents].
   final int totalPhpCents;
+
+  /// The same money again, split by what it was spent on.
+  ///
+  /// Null only for a payload produced before the breakdown existed — a
+  /// `plan_cache` entry written by an older function, which stays valid until
+  /// `places_version()` moves. The UI falls back to the two-part summary rather
+  /// than deriving the lines itself.
+  final CostLines? lines;
 
   /// How many legs had no recorded fare.
   final int unpricedLegs;

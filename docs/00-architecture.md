@@ -1323,6 +1323,32 @@ not each — so the multiplication happens in the composer, not in the user's he
 Fares are not uniform: a jeepney charges per passenger, a tricycle special trip
 is one flat fare for the vehicle, hence `transit_fares.is_per_person`.
 
+**Activity budgets are two different kinds of money, and the schema now says
+which.** `activities.min_budget_php_cents` meant both "materials you buy
+beforehand" (₱200 of baking ingredients) and "what you spend at the place"
+(₱200 of café hopping), and nothing distinguished them — so no total could
+include it without being wrong. Added on the second kind it double-counts,
+because the paired place's own price already carries that money; omitted
+entirely, which is what happened until Gate C, a ₱200-per-person activity
+silently cost ₱0 and `over_budget` was computed from the understated figure.
+
+- **`activities.cost_kind`** is `materials` or `venue`. Only `materials` is
+  added to a plan total. The default is `materials` on purpose: a wrong `venue`
+  drops money silently, while a wrong `materials` over-states, and the
+  over-budget colour and icon make that visible. A missing figure must be loud —
+  the same principle as "At least ₱X" for an unpriced leg.
+- **`activities.budget_is_per_person`** is the `transit_fares.is_per_person`
+  rule applied to the same problem: two people baking together buy **one** set
+  of ingredients, and one pack of film photographs both of them.
+
+Zeroing the venue rows instead was considered and rejected: `retrieve_activities`
+filters on that column, so a ₱0 `cafe-hopping` would surface on a free-date
+search, and café hopping is not free. What a budget *costs* and whether a plan
+has *already counted it* are two facts, and they need two columns.
+
+The breakdown these feed — fares · food · materials · activities · gifts, summing
+to the total exactly — is `02-design-system.md` §10.4.
+
 **Community is a filtered list, not a chronological feed.**
 "Find a plan I can afford" is a query, and a feed structurally cannot answer it.
 Cards stay photo-forward per `02-design-system.md`, but rank by budget fit.

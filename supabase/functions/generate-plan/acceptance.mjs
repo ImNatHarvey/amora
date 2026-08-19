@@ -98,7 +98,23 @@ async function throttled(call, label) {
 // be one generation and nineteen cache hits, which would prove the cache works
 // and say nothing about whether the model stays inside the candidate set.
 
-function requestFor(run) {
+// The couple owns the whole catalogue.
+//
+// Not incidental. `retrieve_activities` filters on
+// `required_resource_ids <@ owned`, so a run that owns nothing sees only the
+// six activities that require nothing — and every *priced* one of those is
+// `cost_kind = 'venue'`. Materials money was therefore structurally impossible
+// to observe, and `verify-totals.mjs` was checking 0 against 0 sixty times
+// while reporting a pass.
+//
+// That is the same vacuous-pass shape this run already has a warning about for
+// cache hits: a criterion that cannot fail is not evidence. Owning everything
+// puts `bake-something`, `scrapbook-making` and the rest in front of the model,
+// so a materials budget can actually reach a total and be checked.
+//
+// Fetched rather than hardcoded: resource ids are per-environment, and a run
+// pinned to this project's uuids would fail confusingly anywhere else.
+function requestFor(run, ownedResourceIds) {
   const budgets = [20000, 30000, 40000, 60000, 80000];
   // Saturday evening through Sunday afternoon, in two-hour steps.
   const start = Date.parse('2026-08-08T09:00:00Z');
@@ -110,6 +126,7 @@ function requestFor(run) {
     origin_lat: 14.7966,
     origin_lng: 120.9268,
     party_size: 2,
+    owned_resource_ids: ownedResourceIds,
   };
 }
 
@@ -143,6 +160,27 @@ async function main() {
         '  Or: dashboard > Project Settings > Edge Functions > Secrets.\n',
     );
   }
+
+  // --- what the couple owns --------------------------------------------------
+  // See requestFor: owning nothing makes materials money unobservable, so the
+  // materials half of the costing rule cannot be checked.
+  const catalogue = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/resource_catalog?select=id`,
+    {
+      headers: {
+        apikey: env.SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+      },
+    },
+  );
+  if (!catalogue.ok) {
+    fail(`could not read resource_catalog: ${catalogue.status} ${await catalogue.text()}`);
+  }
+  const ownedResourceIds = (await catalogue.json()).map((r) => r.id);
+  if (ownedResourceIds.length === 0) {
+    fail('resource_catalog is empty, so no activity requiring anything can be retrieved.');
+  }
+  console.log(`  owning all ${ownedResourceIds.length} catalogue resources\n`);
 
   // --- a throwaway account ---------------------------------------------------
   const email = `amora-acceptance+${Date.now()}@example.com`;
@@ -182,7 +220,7 @@ async function main() {
   let failures = 0;
 
   for (let run = 0; run < RUNS; run += 1) {
-    const body = requestFor(run);
+    const body = requestFor(run, ownedResourceIds);
     const started = Date.now();
     const response = await generate(body);
     const payload = await response.json().catch(() => ({}));
@@ -207,7 +245,7 @@ async function main() {
   // --- the cache -------------------------------------------------------------
   // Run 0 repeated verbatim. It was a miss the first time, so a hit now is the
   // cache doing its job rather than an accident of ordering.
-  const repeat = await generate(requestFor(0));
+  const repeat = await generate(requestFor(0, ownedResourceIds));
   const repeatPayload = await repeat.json().catch(() => ({}));
   const cacheHit = repeatPayload.cache_hit === true;
   console.log(`\n  repeat of run 1: ${cacheHit ? 'CACHE HIT' : 'MISS'}`);
