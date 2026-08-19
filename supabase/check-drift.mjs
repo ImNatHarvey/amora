@@ -37,6 +37,7 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,6 +45,9 @@ const SUPABASE_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(SUPABASE_DIR, '..');
 const MIGRATIONS_DIR = join(SUPABASE_DIR, 'migrations');
 const FUNCTIONS_DIR = join(SUPABASE_DIR, 'functions');
+
+// Set before anything prints: in --hook mode stdout must be JSON and nothing else.
+const asHook = process.argv.includes('--hook');
 
 const problems = [];
 const unverified = [];
@@ -248,11 +252,11 @@ async function checkMigrations(env) {
     }
   }
 
-  console.log(
+  if (!asHook) console.log(
     `  migrations   ${local.size} local, ${remote.length} applied` +
     `${problems.length === 0 ? ' — SQL agrees' : ''}`,
   );
-  if (commentOnly > 0) {
+  if (commentOnly > 0 && !asHook) {
     console.log(
       `               (${commentOnly} differ in comments only — the SQL is ` +
       'identical, so the database matches the repo)',
@@ -280,14 +284,40 @@ function localFunctionFiles(slug) {
   return files;
 }
 
+/**
+ * The Supabase personal access token, from the environment or from a file in
+ * the home directory.
+ *
+ * **Deliberately never from inside the repository.** A PAT has account-level
+ * access — it can create and delete projects — and this repo is public. It has
+ * already had one credential committed and caught by GitGuardian, so the answer
+ * is not "another gitignored file"; it is a path that a `git add -A` cannot
+ * reach even by accident.
+ *
+ * The environment variable is safest of all, because it dies with the shell.
+ * The file exists because a control that only runs when someone remembers to
+ * export a variable is the habit that failed three times — see CLAUDE.md.
+ */
+function accessToken() {
+  if (process.env.SUPABASE_ACCESS_TOKEN) return process.env.SUPABASE_ACCESS_TOKEN.trim();
+  const path = join(homedir(), '.amora-drift-token');
+  try {
+    return readFileSync(path, 'utf8').trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 async function checkEdgeFunctions(env) {
-  const token = process.env.SUPABASE_ACCESS_TOKEN;
+  const token = accessToken();
   if (!token) {
     unverified.push(
-      'edge functions: SUPABASE_ACCESS_TOKEN is not set, so the deployed ' +
-      'bundles were NOT compared against disk. This is the half that catches ' +
-      'incident 1. Create a token at ' +
-      'https://supabase.com/dashboard/account/tokens and export it.',
+      'edge functions: no access token, so the deployed bundles were NOT ' +
+      'compared against disk. This is the half that catches incident 1. ' +
+      'Create one at https://supabase.com/dashboard/account/tokens, then ' +
+      'either export SUPABASE_ACCESS_TOKEN or write it to ' +
+      `${join(homedir(), '.amora-drift-token')} — never inside this repo, ` +
+      'which is public.',
     );
     return;
   }
@@ -346,34 +376,95 @@ async function checkEdgeFunctions(env) {
         );
       }
     }
-    console.log(`  ${fn.slug.padEnd(14)} v${fn.version}, ${local.size} files compared`);
+    if (!asHook) console.log(`  ${fn.slug.padEnd(14)} v${fn.version}, ${local.size} files compared`);
   }
 }
 
+/**
+ * `--hook` mode: emit the Claude Code SessionStart envelope instead of prose.
+ *
+ * The verdict goes in `additionalContext`, which is injected into the model's
+ * context at session start — so drift is something Claude is *told*, not
+ * something it has to remember to look for. That is the whole difference
+ * between this and the three CLAUDE.md notes that never held.
+ *
+ * **Always exits 0 in hook mode**, deliberately. A non-zero SessionStart hook
+ * risks interfering with startup, and the failure does not need an exit code to
+ * be loud — it needs to be *read*, which is what additionalContext does. The
+ * verdict word is in the text.
+ *
+ * The JSON is built here rather than piped through jq because jq is not
+ * installed on this machine and node always is.
+ */
+function hookEnvelope() {
+  const verdict = problems.length > 0
+    ? 'DRIFT'
+    : unverified.length > 0
+      ? 'COULD NOT CHECK'
+      : 'AGREES';
+
+  const lines = [`check-drift.mjs: ${verdict}`];
+  for (const problem of problems) lines.push(`  DRIFT: ${problem}`);
+  for (const item of unverified) lines.push(`  UNVERIFIED: ${item}`);
+
+  if (verdict === 'DRIFT') {
+    lines.push(
+      '',
+      'The repository and the Supabase project disagree. Tell Nat before doing',
+      'anything else, and do not treat this as a pass.',
+    );
+  } else if (verdict === 'COULD NOT CHECK') {
+    lines.push(
+      '',
+      'Part of the check could not run, which is NOT a pass. Report it.',
+    );
+  }
+
+  return JSON.stringify({
+    systemMessage: `Amora drift check: ${verdict}`,
+    suppressOutput: true,
+    hookSpecificOutput: {
+      hookEventName: 'SessionStart',
+      additionalContext: lines.join('\n'),
+    },
+  });
+}
+
 const env = loadEnv();
+
 if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
-  console.error('apps/mobile/.env is missing SUPABASE_URL or SUPABASE_ANON_KEY.');
-  process.exitCode = 2;
+  unverified.push('apps/mobile/.env is missing SUPABASE_URL or SUPABASE_ANON_KEY.');
+  if (asHook) {
+    console.log(hookEnvelope());
+  } else {
+    console.error('apps/mobile/.env is missing SUPABASE_URL or SUPABASE_ANON_KEY.');
+    process.exitCode = 2;
+  }
 } else {
-  console.log('\n  Checking the repository against the project.\n');
+  if (!asHook) console.log('\n  Checking the repository against the project.\n');
+
   await checkMigrations(env);
   await checkEdgeFunctions(env);
 
-  if (problems.length > 0) {
-    console.log(`\n  DRIFT — ${problems.length} problem(s):\n`);
-    for (const problem of problems) console.log(`    ${problem}`);
-  }
-  if (unverified.length > 0) {
-    console.log(`\n  COULD NOT CHECK — ${unverified.length} item(s):\n`);
-    for (const item of unverified) console.log(`    ${item}`);
-  }
-
-  if (problems.length > 0) {
-    process.exitCode = 1;
-  } else if (unverified.length > 0) {
-    console.log('\n  Nothing checked disagreed, but the run was incomplete.\n');
-    process.exitCode = 2;
+  if (asHook) {
+    console.log(hookEnvelope());
   } else {
-    console.log('\n  The repository and the project agree.\n');
+    if (problems.length > 0) {
+      console.log(`\n  DRIFT — ${problems.length} problem(s):\n`);
+      for (const problem of problems) console.log(`    ${problem}`);
+    }
+    if (unverified.length > 0) {
+      console.log(`\n  COULD NOT CHECK — ${unverified.length} item(s):\n`);
+      for (const item of unverified) console.log(`    ${item}`);
+    }
+
+    if (problems.length > 0) {
+      process.exitCode = 1;
+    } else if (unverified.length > 0) {
+      console.log('\n  Nothing checked disagreed, but the run was incomplete.\n');
+      process.exitCode = 2;
+    } else {
+      console.log('\n  The repository and the project agree.\n');
+    }
   }
 }

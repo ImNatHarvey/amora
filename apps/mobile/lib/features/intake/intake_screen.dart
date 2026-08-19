@@ -95,8 +95,10 @@ class _IntakeScreenState extends ConsumerState<IntakeScreen> {
   /// since those only show while nothing is established. Opening the sheet on
   /// their usual number is visible and is correctable before it commits.
   Future<int?> _askBudget(int? currentCents) {
-    final usual =
-        ref.read(currentProfileProvider).valueOrNull?.usualBudgetPhpCents;
+    final usual = ref
+        .read(currentProfileProvider)
+        .valueOrNull
+        ?.usualBudgetPhpCents;
 
     return showModalBottomSheet<int>(
       context: context,
@@ -194,7 +196,11 @@ class _IntakeScreenState extends ConsumerState<IntakeScreen> {
             if (state.constraints.hasAny || state.messages.isNotEmpty)
               Padding(
                 padding: EdgeInsets.fromLTRB(
-                    tokens.md, tokens.md, tokens.md, tokens.sm),
+                  tokens.md,
+                  tokens.md,
+                  tokens.md,
+                  tokens.sm,
+                ),
                 child: ConstraintChips(
                   constraints: state.constraints,
                   onEdit: (field) => _edit(field, state.constraints),
@@ -348,71 +354,84 @@ class _BudgetSheetState extends State<_BudgetSheet> {
       // honoured or the field it raises sits underneath it.
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.all(tokens.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Budget for the two of you',
-                style: theme.textTheme.titleLarge,
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: tokens.xs),
-              // §9's convention, stated where it is entered rather than only in
-              // the docs: prices are per person, the budget is not.
-              Text(
-                'For the whole date, not each.',
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: tokens.lg),
-              TextField(
-                controller: _field,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                textAlign: TextAlign.center,
-                // The amount is the main event on this surface (§5).
-                style: theme.textTheme.displaySmall,
-                decoration: const InputDecoration(
-                  prefixText: '₱',
-                  border: OutlineInputBorder(),
-                  // Zero is a first-class answer, not a lesser one (§9).
-                  helperText: '0 is fine — free plans are still plans.',
-                  helperMaxLines: 2,
+        // Scrollable because the keyboard and the type scale compete for the
+        // same space, and this sheet loses. Measured, not assumed: at 1.3× font
+        // scale on a 400×720 phone with a 300px keyboard up, the column
+        // overflowed by 151 pixels — a `displaySmall` amount field, a two-line
+        // helper, five preset chips that wrap to more rows as text grows, and
+        // two buttons. `complete_plan_sheet` already scrolls for this reason.
+        //
+        // It costs nothing when the content fits: a SingleChildScrollView with
+        // a min-size Column does not scroll until it has to. See
+        // `test/large_text_test.dart`, which fails without this.
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.all(tokens.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Budget for the two of you',
+                  style: theme.textTheme.titleLarge,
+                  textAlign: TextAlign.center,
                 ),
-                onSubmitted: (_) => _submit(),
-              ),
-              SizedBox(height: tokens.lg),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: tokens.sm,
-                runSpacing: tokens.sm,
-                children: [
-                  for (final preset in _presets)
-                    ChoiceChip(
-                      label: Text(preset == 0 ? 'Free' : '₱$preset'),
-                      selected: _pesos == preset,
-                      onSelected: (_) => _pick(preset),
-                    ),
-                ],
-              ),
-              SizedBox(height: tokens.lg),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                SizedBox(height: tokens.xs),
+                // §9's convention, stated where it is entered rather than only in
+                // the docs: prices are per person, the budget is not.
+                Text(
+                  'For the whole date, not each.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  SizedBox(width: tokens.sm),
-                  FilledButton(onPressed: _submit, child: const Text('Set')),
-                ],
-              ),
-            ],
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: tokens.lg),
+                TextField(
+                  controller: _field,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  textAlign: TextAlign.center,
+                  // The amount is the main event on this surface (§5).
+                  style: theme.textTheme.displaySmall,
+                  decoration: const InputDecoration(
+                    prefixText: '₱',
+                    border: OutlineInputBorder(),
+                    // Zero is a first-class answer, not a lesser one (§9).
+                    helperText: '0 is fine — free plans are still plans.',
+                    helperMaxLines: 2,
+                  ),
+                  onSubmitted: (_) => _submit(),
+                ),
+                SizedBox(height: tokens.lg),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: tokens.sm,
+                  runSpacing: tokens.sm,
+                  children: [
+                    for (final preset in _presets)
+                      ChoiceChip(
+                        label: Text(preset == 0 ? 'Free' : '₱$preset'),
+                        selected: _pesos == preset,
+                        onSelected: (_) => _pick(preset),
+                      ),
+                  ],
+                ),
+                SizedBox(height: tokens.lg),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    SizedBox(width: tokens.sm),
+                    FilledButton(onPressed: _submit, child: const Text('Set')),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -436,8 +455,12 @@ class _Starters extends StatelessWidget {
     final now = DateTime.now();
     final tonight = manilaToUtc(DateTime(now.year, now.month, now.day, 19));
     final saturday = manilaToUtc(
-      DateTime(now.year, now.month, now.day, 18)
-          .add(Duration(days: (DateTime.saturday - now.weekday + 7) % 7)),
+      DateTime(
+        now.year,
+        now.month,
+        now.day,
+        18,
+      ).add(Duration(days: (DateTime.saturday - now.weekday + 7) % 7)),
     );
 
     return Padding(
@@ -451,8 +474,9 @@ class _Starters extends StatelessWidget {
           Text(
             'Tell me your budget, when, and where you are starting from — or '
             'just tap one of these.',
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           SizedBox(height: tokens.lg),
           // Phrased as something a person would type, not as a menu. No
@@ -511,8 +535,9 @@ class _MessageRow extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: tokens.sm),
       child: Align(
-        alignment:
-            message.isUser ? Alignment.centerRight : Alignment.centerLeft,
+        alignment: message.isUser
+            ? Alignment.centerRight
+            : Alignment.centerLeft,
         child: ConstrainedBox(
           // Short lines matter more here than anywhere: a cramped chat reads as
           // a support widget, not a planner.

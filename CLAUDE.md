@@ -41,6 +41,60 @@ that the tricycle there is ₱25.
 
 ---
 
+## Session start: the drift check
+
+**A `SessionStart` hook runs `node supabase/check-drift.mjs --hook` and puts the
+verdict in your context before you do anything.** The harness runs it, not you —
+that is the point. This started as an instruction in `HANDOFF.md`, was written
+there three times, and was followed none of them, which is how two migrations
+ended up applied and never committed.
+
+**Report the verdict unprompted, in your first message of the session.**
+
+| Verdict | What it means | What to do |
+|---|---|---|
+| `AGREES` | repo and project match | say so in one line and continue |
+| `DRIFT` | they disagree | **stop and tell Nat first.** A fresh checkout would build a different database |
+| `COULD NOT CHECK` | part of it did not run | **not a pass.** Say which half was unverified and why |
+
+**`COULD NOT CHECK` is a failure, not a shrug.** The usual cause is no Supabase
+access token, which leaves the Edge Function half unverified — the half that
+catches a deployed bundle sitting behind the repo. Nat can fix it with a token
+at `~/.amora-drift-token`; never put one inside this repo, which is public.
+
+If the hook did not fire, run the script yourself. A missing hook is not a pass
+either.
+
+## Before trusting a green check
+
+**Ask what the check would report if the code under test did nothing at all. If
+the answer is the same, it is not a check — it needs a precondition that the run
+actually touched something.**
+
+Not a hypothetical. `verify-totals.mjs` reported materials **60/60** while every
+value on both sides was ₱0, because the harness owned no resources and the only
+priced activities it could reach added nothing. It compared zero to zero sixty
+times and called it evidence.
+
+Where this keeps appearing:
+
+- **A negative assertion with no positive twin.** `findsNothing`, "no name
+  leaked", "zero rows returned" — all satisfied by the screen never rendering,
+  the extractor returning `{}`, or the query being blocked *and* the row not
+  existing. Pair every one with a positive in the same test.
+- **A count that can be zero.** "20 generations, 0 refused" was true of twenty
+  runs that produced no plans at all.
+- **A check run as the attacker.** "Zero rows" cannot distinguish *blocked* from
+  *succeeded but invisible to me*. Re-check as service role — that nearly
+  produced two false passes in Phase 5.
+
+**Phase 3b was accepted on a criterion silence could satisfy** — only "no
+catalogue name appeared" was machine-checked. It now asserts what twelve
+utterances must *produce*, and passes. Record any similar gap in `HANDOFF.md`
+rather than quietly strengthening the check and moving on.
+
+---
+
 ## Stack (decided — do not substitute)
 
 | Layer | Choice | Version |

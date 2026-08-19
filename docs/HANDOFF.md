@@ -1207,9 +1207,31 @@ the three incidents this repo has actually had:
 | 2 — Phase 6 filenames not matching the stamped version | local-only *and* remote-only version, in one run |
 | 3 — two Gate C migrations applied and never committed | remote-only version |
 
+**It runs itself.** A `SessionStart` hook in `.claude/settings.json` calls
+`check-drift.mjs --hook`, which emits the verdict as `additionalContext` — so
+Claude is *told* the state before doing anything, rather than having to remember
+to look. That is the difference between this and the three HANDOFF notes that
+never held. The rule is in `CLAUDE.md`; `--hook` always exits 0 and carries the
+verdict in its text, because a non-zero SessionStart hook risks interfering with
+startup and the failure needs to be *read*, not counted.
+
+If the hook does not fire — the settings watcher only picks up `.claude/` if a
+settings file existed at session start — run the script by hand. **A hook that
+did not run is not a pass.**
+
 **Why a script rather than a pre-commit hook**, which was the obvious answer:
 the session that orphaned those two migrations **never made a commit**. A
 control that only fires when you commit cannot cover the case where you did not.
+
+**The access token is session-scoped by choice.** A Supabase PAT has
+account-level access — it can delete projects — and this repo is public and has
+already had one credential caught by GitGuardian. `check-drift.mjs` reads
+`SUPABASE_ACCESS_TOKEN`, falling back to `~/.amora-drift-token`: **outside the
+repo on purpose**, where `git add -A` cannot reach it. An env var that dies with
+the shell is safest; the file exists because a control that runs only when
+someone remembers to export a variable is the habit that already failed. Never a
+gitignored file inside the repo — that is one `.gitignore` edit away from a
+public leak.
 
 `public.migration_ledger()` is what makes it work from a developer machine —
 SECURITY DEFINER, `search_path` pinned, granted to anon on purpose. It returns
@@ -1258,7 +1280,60 @@ check, ask what it would report if the code under test did nothing at all. If
 the answer is "the same thing", it needs a precondition that the run actually
 touched something. This is the same defect as the Phase 5 RLS attacks that were
 run as the attacker, where "zero rows" meant "blocked" and "succeeded but
-invisible to me" identically.
+invisible to me" identically. It is now in `CLAUDE.md`.
+
+### Does any accepted phase rest on a vacuous check?
+
+Nat asked directly. Every accepted criterion was re-read against the rule:
+
+| Phase | Verdict |
+|---|---|
+| **3b** | **Yes — and it is the only one.** "Zero catalogue names across 20 utterances" is satisfied by an extractor that returns nothing. The other two criteria (20/20 HTTP 200, both rephrasings cache hits) are positive and were sound |
+| 3 | No. "Zero invalid IDs" could have gone vacuous on empty plans; that gap is now closed in the harness, and the criterion was re-run on 2026-08-19 with 60 real plans |
+| 5 | No. The RLS attacks were the vacuous shape and were already re-verified as service role when written |
+| 6 | No. Same shape, same handling — every refusal was confirmed as service role afterwards |
+| 0, 1 | No. Device-observed, and their data criterion is openly unmet in the ledger |
+
+**Recommendation: do not reopen Phase 3b's acceptance.** The claim it was granted
+on — extraction never yields a place name — was *true*; it was simply
+under-evidenced, because nothing checked the other direction. That direction is
+now enforced by twelve assertions and **passes on the live model**, with values
+matching the 2026-08-10 run exactly. Reopening would re-run the same harness and
+reach the same verdict.
+
+What the episode actually costs is confidence in the *process*, not in Phase 3b,
+and the fix for that is the rule above rather than a re-acceptance ceremony.
+Recorded here so the under-evidenced period is visible instead of tidied away.
+
+## 1.3× is now testable, and it found the sheet Nat guessed at
+
+`apps/mobile/test/large_text_test.dart`. Every other widget test runs at 1.0× on
+a viewport up to 2400 logical pixels tall — taller than any phone — which is why
+none of them has ever caught an overflow and three have been found on the device
+instead. These run at **400×720 with `textScaleFactorTestValue = 1.3`**,
+deliberately smaller than the S25 Ultra, which flatters the layout (§3).
+
+**The budget sheet overflowed by 151 pixels** with a 300px keyboard up. Nat
+raised it as an untested guess — `displaySmall` in a keyboard-inset sheet — and
+it was right: `displaySmall` at 1.3× plus a two-line helper, five preset chips
+that wrap to more rows as text grows, and a button row, in a `Column` with **no
+scroll view**. Fixed with a `SingleChildScrollView`, which `complete_plan_sheet`
+already had for the same reason. The test fails without the fix.
+
+**The five-line price breakdown does not overflow** — it wraps. That one was my
+worry and it was overstated; `Text` in a `Column` gets a bounded width and soft
+wraps. Recorded so it is not re-flagged.
+
+**`retime_sheet` is the remaining unscrolled sheet.** It has no text field so no
+keyboard inset, which makes it lower risk, but it is the same shape and has no
+1.3× test. Worth one when something next touches it.
+
+**The trap to remember:** the first version of the sheet test injected the
+keyboard inset through a `MediaQuery` wrapping the whole app, which squashed the
+intake screen too and failed before ever opening the sheet. A real keyboard
+appears *because the sheet's field takes focus*, so the inset has to be raised
+on `tester.view` **after** the sheet is open, or the test measures a layout no
+user ever sees.
 
 ## The (TEST) markers — audited 2026-08-19, and they are visible
 
