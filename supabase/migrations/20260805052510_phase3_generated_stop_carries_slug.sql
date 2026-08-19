@@ -215,12 +215,15 @@ begin
 end;
 $$;
 
-comment on function public.cost_generated_plan(
-  text, integer, timestamptz, text, double precision, double precision, jsonb, uuid[], integer) is
-  'Validates a model-produced stop sequence against a freshly recomputed '
-  'candidate set (invariant 2) and costs it server-side (invariant 3). Returns '
-  'valid=false with the offending IDs rather than raising, so the caller can '
-  'issue its one corrective retry.';
+-- A `comment on function cost_generated_plan(...)` stood here and was never
+-- applied — `apply_migration` takes SQL inline, and the session that ran this
+-- pasted the statements without it. Removed 2026-08-19 when
+-- `supabase/check-drift.mjs` found the divergence, so this file is once again a
+-- record of what actually ran.
+--
+-- Nothing is lost: the function's comment is set by
+-- 20260819021108_gate_c_cost_kind_drives_the_lines, and re-adding the old text
+-- here would only have it overwritten on replay anyway.
 
 -- Not granted to authenticated. The Edge Function calls this with the service
 -- role: letting a device validate its own generated plan would put both halves

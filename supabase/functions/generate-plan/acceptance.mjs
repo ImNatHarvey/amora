@@ -229,12 +229,25 @@ async function main() {
     // 502 is the function refusing to return an unvalidated plan after its one
     // corrective retry. That is the failure this criterion is about.
     const invalid = response.status === 502;
-    if (invalid || response.status >= 400) failures += 1;
+    const plans = payload.plans?.length ?? 0;
+
+    // A 200 carrying no plans is a failure, and it did not used to be counted
+    // as one. Twenty runs returning `{plans: []}` would have printed
+    // "generations: 20, refused/errored: 0" and read as a pass — zero invalid
+    // IDs across zero plans is true and worthless. The criterion is about what
+    // the model produced, so producing nothing cannot satisfy it.
+    //
+    // Two of three plans is NOT counted here: §8 treats a short answer as
+    // prompt adherence rather than an invented place, and that distinction is
+    // deliberate. Zero is different in kind, not in degree.
+    const empty = response.status < 400 && plans === 0;
+    if (invalid || empty || response.status >= 400) failures += 1;
 
     results.push({ run, request: body, status: response.status, elapsed, payload });
 
-    const plans = payload.plans?.length ?? 0;
-    const flag = response.status >= 400 ? ' <-- FAILED' : '';
+    const flag = response.status >= 400
+      ? ' <-- FAILED'
+      : empty ? ' <-- NO PLANS' : '';
     console.log(
       `  run ${String(run + 1).padStart(2)}/${RUNS}  ` +
         `${response.status}  ${String(elapsed).padStart(5)}ms  ` +

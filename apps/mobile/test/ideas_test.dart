@@ -252,6 +252,11 @@ void main() {
   testWidgets('a non-DIY activity never shows a tutorial', (tester) async {
     await _pump(tester, activities: const [_free]);
 
+    // The positive first, and it is not decoration: with only `findsNothing`
+    // below, a broken `_pump` — a missing provider override, an empty list —
+    // would render nothing at all and this test would pass for the wrong
+    // reason. A check that survives the screen not existing is not a check.
+    expect(find.text('Sunset watching'), findsOneWidget);
     expect(find.text('Watch the tutorial'), findsNothing);
   });
 

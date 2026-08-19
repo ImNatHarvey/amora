@@ -1187,6 +1187,102 @@ field would go, so the next session finds it before re-adding one.
 the phone** — the device pass now owes the splash, the budget sheet,
 preferences, the navigation restructure and this breakdown.
 
+## Drift is now checked, not remembered. Run this every session.
+
+```
+node supabase/check-drift.mjs
+```
+
+**Exit 0 agrees · 1 drift · 2 could not check — and 2 is not a pass.** Nat's
+call, 2026-08-19: a routine written into this file three times and never once
+followed is not a control.
+
+It compares committed migrations against `supabase_migrations.schema_migrations`
+in both directions, and the deployed Edge Function bundles against disk. Against
+the three incidents this repo has actually had:
+
+| Incident | Caught by |
+|---|---|
+| 1 — deployed `generate-plan` two versions behind disk for a fortnight | the Edge Function half. **Needs `SUPABASE_ACCESS_TOKEN`**; without it the script says UNVERIFIED and exits 2 |
+| 2 — Phase 6 filenames not matching the stamped version | local-only *and* remote-only version, in one run |
+| 3 — two Gate C migrations applied and never committed | remote-only version |
+
+**Why a script rather than a pre-commit hook**, which was the obvious answer:
+the session that orphaned those two migrations **never made a commit**. A
+control that only fires when you commit cannot cover the case where you did not.
+
+`public.migration_ledger()` is what makes it work from a developer machine —
+SECURITY DEFINER, `search_path` pinned, granted to anon on purpose. It returns
+migration versions and their SQL, all of which is already public in this repo,
+and no user data. The alternative was a service-role key on a laptop.
+
+**It compares SQL, not prose.** Comments never execute, so a comment-only
+difference is counted and reported as a note rather than failing the run. That
+is not laxity — it is what stops the check crying wolf: 13 committed migrations
+already differ from what was applied in their headers alone, because
+`apply_migration` takes SQL inline and those sessions pasted the statements
+without them. A check that reports 13 false alarms is a check nobody reads.
+
+**What it found on its first run**, beyond the comment-only 13: one real
+divergence. `20260805052510` carried a `comment on function
+cost_generated_plan(...)` that was never applied. Removed from the file rather
+than applied to the database — Gate C's migration sets that comment now, so
+re-adding the old text would only have it overwritten on replay.
+
+## The audit for checks that cannot fail — 2026-08-19
+
+Prompted by the materials check reporting 60/60 while every value on both sides
+was ₱0. Nat's framing, and it is the right one: **a green check that cannot fail
+is worse than no check, because it is believed.**
+
+Every assertion that would still have passed if the thing under test returned
+nothing:
+
+| Where | The hole | Now |
+|---|---|---|
+| `verify-totals.mjs` | all five comparisons pass on 0 == 0; empty evidence printed 0/0 and exited **0** | five non-zero preconditions — plans, stops, place money, materials, fares. Unmet → **exit 2, "NOT EVIDENCE"** |
+| `generate-plan/acceptance.mjs` | a 200 carrying `{plans: []}` counted as a success; 20 empty runs would have read "20 generations, 0 refused" | an empty 200 is a failure. *Two* plans instead of three still is not — §8 calls that prompt adherence, and zero differs in kind |
+| `extract-intake/acceptance.mjs` | the leak check is "no name from this list appears"; an empty list passes trivially | refuses to run when the catalogue comes back empty |
+| `extract-intake/acceptance.mjs` | **only the negative direction was ever asserted.** An extractor returning `{}` for all 20 utterances would have printed PASS | 12 utterances now assert what they must *produce*, from the accepted 2026-08-10 values. Verified passing |
+| `ideas_test.dart` "a non-DIY activity never shows a tutorial" | `findsNothing` only — a broken `_pump` passes it | asserts the activity title renders first |
+
+**Checked and sound**, so nobody re-audits them: the nav-bar test (`hasLength(3)`
+plus three positives), the companion-type test ("My partner" asserted first),
+the ₱0-wording tests (assert the exact rendered string), the completed-plan
+affordances ("You did this"), and `plan_detail_test`'s cost summary — where the
+negative is safe because its positive twin exercises the same widget through the
+same pump. The Deno suites were already written in both directions.
+
+**The general rule, worth applying to anything new:** before trusting a green
+check, ask what it would report if the code under test did nothing at all. If
+the answer is "the same thing", it needs a precondition that the run actually
+touched something. This is the same defect as the Phase 5 RLS attacks that were
+run as the attacker, where "zero rows" meant "blocked" and "succeeded but
+invisible to me" identically.
+
+## The (TEST) markers — audited 2026-08-19, and they are visible
+
+Nat's standing instruction: every screen demoed is against fake Bocaue places,
+and the more finished the app looks the easier that is to forget.
+
+**They are currently visible.** All 15 `places` carry `(TEST)` in `name` and
+`test-` in `slug`; all 12 `place_notes` are marked too. Since every surface that
+shows a stop renders `place.name`, the marker travels with it — the timeline,
+the leg lines, place detail, the add-stop picker and the completion sheet.
+
+Two places show no name and therefore no marker:
+
+- **A model-authored plan title** ("A cosy evening in Poblacion") carries no
+  marker. It names no place, so nothing is claimed — but a screenshot of a
+  saved-plan list is the one view where nothing says the data is fake.
+- **Map pins, at Gate D.** Numbered pins with no label would put the fakest data
+  in the app on screen with no marker on it. **Gate D must label pins or keep
+  the numbered list adjacent** — treat this as a constraint on that gate, not a
+  preference.
+
+Do not strip the markers to make a screenshot look better. They come out when
+`DESK-CHECKLIST.md` replaces the rows, and not before.
+
 ## Review pass, post-Phase-3 — what it found
 
 Run after Phase 3 landed, because three phases had gone in fast. Supabase security

@@ -155,6 +155,11 @@ async function main(env) {
   let placesOk = 0;
   let faresOk = 0;
   let materialsOk = 0;
+  // What the run actually exercised, for the preconditions at the end.
+  let stopsSeen = 0;
+  let placesSeen = 0;
+  let materialsSeen = 0;
+  let faresSeen = 0;
   let linesOk = 0;
   let totalsOk = 0;
   const problems = [];
@@ -181,10 +186,13 @@ async function main(env) {
         // every total wrong by 2x before it was defined.
         const stopCents = price * party;
         expectedPlaces += stopCents;
+        stopsSeen += 1;
+        placesSeen += stopCents;
         expectedLines[lineForPlace(categoryOf.get(stop.slug))] += stopCents;
 
         const materials = materialsFor(stop.activity_id, party);
         expectedMaterials += materials;
+        materialsSeen += materials;
         expectedLines.materials += materials;
       }
 
@@ -194,7 +202,7 @@ async function main(env) {
         const toArea = areaOf.get(plan.stops[j]?.slug);
         const fromArea = j === 0 ? origin : areaOf.get(plan.stops[j - 1]?.slug);
         const fare = fareFor(fromArea, toArea, leg.mode, party);
-        if (fare !== null) expectedFares += fare;
+        if (fare !== null) { expectedFares += fare; faresSeen += fare; }
       }
 
       const claimed = plan.totals;
@@ -251,22 +259,66 @@ async function main(env) {
     }
   }
 
+  // --- preconditions: what did this run actually touch? ----------------------
+  //
+  // Everything above compares an expected figure to a claimed one, and every
+  // one of those comparisons passes when both sides are zero. So the run can
+  // report 60/60 having checked nothing at all — which is not hypothetical:
+  // on 2026-08-19 it reported materials 60/60 while every plan's materials was
+  // ₱0, because the harness owned no resources and the only priced activities
+  // it could reach were `venue`. It compared 0 to 0 sixty times and called it
+  // evidence.
+  //
+  // These are the non-zero preconditions. They do not check any figure; they
+  // check that there was a figure to check. A criterion that cannot fail is not
+  // a criterion, and it is worse than no criterion because it is believed.
+  const preconditions = [
+    [plans > 0, 'no plans in the evidence at all'],
+    [stopsSeen > 0, 'no stops across any plan, so no place price was checked'],
+    [placesSeen > 0, 'every stop was free, so the party-size multiplication was never exercised'],
+    [materialsSeen > 0,
+      'no plan carried materials, so the activity-costing rule compared 0 to 0. ' +
+      'The harness must own resources — see requestFor in acceptance.mjs'],
+    [faresSeen > 0,
+      'no leg had a recorded fare, so fare costing was never exercised. ' +
+      'Expected while every place sits in one barangay; it still means the ' +
+      'fares column proves nothing'],
+  ];
+
+  const unmet = preconditions.filter(([met]) => !met).map(([, why]) => why);
+
   console.log(`\n  plans checked:  ${plans}`);
   console.log(`  places match:   ${placesOk}/${plans}`);
   console.log(`  fares match:    ${faresOk}/${plans}`);
   console.log(`  materials match:${materialsOk}/${plans}`);
   console.log(`  lines match:    ${linesOk}/${plans}`);
   console.log(`  totals match:   ${totalsOk}/${plans}`);
+  console.log(
+    `\n  exercised:      ${stopsSeen} stops, ` +
+    `₱${placesSeen / 100} of places, ₱${faresSeen / 100} of fares, ` +
+    `₱${materialsSeen / 100} of materials`,
+  );
 
-  if (problems.length === 0) {
-    console.log(
-      '\n  Every figure recomputed from places, transit_fares and activities, ' +
-      'without cost_generated_plan.\n',
-    );
-  } else {
+  if (problems.length > 0) {
     console.log(`\n  ${problems.length} problem(s):`);
     for (const problem of problems.slice(0, 25)) console.log(`    ${problem}`);
+    process.exitCode = 1;
+    return;
   }
 
-  process.exitCode = problems.length === 0 ? 0 : 1;
+  if (unmet.length > 0) {
+    console.log('\n  NOT EVIDENCE — the comparisons passed but had nothing to compare:\n');
+    for (const why of unmet) console.log(`    ${why}`);
+    console.log(
+      '\n  Exit 2: this is neither a pass nor a mismatch. It is a run that did\n' +
+      '  not test what it claims to test.\n',
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  console.log(
+    '\n  Every figure recomputed from places, transit_fares and activities, ' +
+    'without cost_generated_plan.\n',
+  );
 }
