@@ -6,6 +6,20 @@ don't say. Last updated for the Gate C commit.
 
 ## Where we are
 
+> **2026-08-22 — the app is installable and there is a build on the phone's
+> terms.** Demo seed data (15 generated places, 11 barangays, 66 fares), Gate D
+> finished, a visual pass, branding placeholders, and the app name and icon.
+> **The next action is `docs/DEVICE-RUN.md`** — connect, install, and walk the
+> checklist once in light, once in dark, once at 1.3×.
+>
+> **The data is generated and Phase 0 and Phase 2 stay open.** Every price and
+> opening time in the catalogue is invented; `verified_method = 'generated'`
+> records that, and `supabase/seed/wipe-demo.sql` removes all of it in one
+> command. Read `supabase/seed/DEMO-DATA.md` before touching the rows — some
+> are real, named businesses, which is only permissible while the build stays on
+> one phone.
+
+
 **Every phase of the MVP is now built.** Phase 6 was the last one, and there is
 no more code to write before the app is usable end to end. What stands between
 here and a shippable MVP is **data and a phone**, not development.
@@ -1558,46 +1572,12 @@ budget and radius, takes the 3 nearest it can afford, and costs every leg. Only
 ## Test device
 
 Samsung Galaxy S25 Ultra (SM-S938B), Android 16 / API 36, over **wireless
-debugging** — the USB cable is charge-only. Stable id:
-`adb-R5CY224851B-4mLefi._adb-tls-connect._tcp` (use the mDNS form; the IP-and-port
-form changes on reboot).
+debugging** — the USB cable is charge-only. The emulator is abandoned; do not
+suggest it (`00-architecture.md` §3).
 
-**The emulator is abandoned** — unstable across several sessions. Do not suggest
-it. Full rationale and the flagship-flatters-us caveat: `00-architecture.md` §3.
-
-### Getting wireless debugging back after a reboot
-
-Samsung turns **Wireless debugging off on every reboot**, so this is a recurring
-chore, not a fault. Work down the list; stop as soon as `flutter devices` sees
-the phone.
-
-1. **Phone:** Settings → Developer options → **Wireless debugging → ON**.
-2. **Same Wi-Fi, and not a guest network.** Client isolation (common on guest
-   SSIDs and some mesh setups) blocks both mDNS and the direct connection, and
-   looks exactly like the phone being off.
-3. **Try the saved name first:**
-   `adb connect adb-R5CY224851B-4mLefi._adb-tls-connect._tcp`
-4. **If that prints `cannot resolve host` — re-pair from scratch.** The name only
-   resolves while the phone is advertising it over mDNS, and the pairing is
-   dropped by a factory-level toggle or an OS update.
-   - Phone: Wireless debugging → **Pair device with pairing code**. It shows an
-     `IP:PORT` *and* a six-digit code. This port is **not** the same as the one
-     on the main Wireless debugging screen.
-   - `adb pair <ip>:<pairing-port>` — paste the code when prompted.
-   - `adb connect <ip>:<connect-port>` — the port from the **main** screen.
-5. **If mDNS is the specific problem** (pairing works, the name never resolves):
-   - `adb mdns check` reports whether the discovery backend is running at all.
-   - `adb mdns services` lists what it can currently see.
-   - `adb kill-server && adb start-server`, then retry step 3.
-   - Still dead: **use the `IP:PORT` form and move on.** It works identically;
-     it just changes on reboot, which is the only reason the mDNS name is
-     preferred. Do not spend a session fixing mDNS.
-6. **"more than one device"** — two connections to the same phone.
-   `adb devices` then `adb disconnect <the stale one>`.
-7. Confirm with `flutter devices`, then `flutter run`.
-
-If the phone appears in `adb devices` as `unauthorized`, the trust prompt is
-waiting on the phone screen — unlock it and accept.
+**The pairing ladder, the build commands, the one-pass checklist and the list of
+what is expected to break now live in `docs/DEVICE-RUN.md`.** They are
+procedure, not context, and they were the longest thing in this file.
 
 ## Hard rules
 
