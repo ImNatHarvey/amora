@@ -73,6 +73,43 @@ const UTTERANCES = [
   'plan something nice',
 ];
 
+/**
+ * What extraction must actually PRODUCE, not merely fail to leak.
+ *
+ * Until 2026-08-19 this file machine-checked one direction only: that no
+ * catalogue name appeared in any output. **An extractor that returned `{}` for
+ * every utterance would have passed it** — no names, no leaks, PASS — and the
+ * legitimate half was eyeballed from a printed table and never asserted.
+ *
+ * That is the same defect as a materials check that compares 0 to 0, and it sat
+ * under an accepted criterion. Both directions are the standing rule in this
+ * repo for anything that decides money or constraints; the negative half alone
+ * is satisfied by silence.
+ *
+ * `undefined` means "not asserted"; `null` means "must be absent", which is the
+ * load-bearing case for a named place. Values are from the accepted 2026-08-10
+ * run recorded in HANDOFF, so this encodes behaviour already agreed rather than
+ * behaviour invented here.
+ */
+const EXPECTATIONS = {
+  'under 200 tonight': { budget_php_cents: 20000 },
+  'we have ₱500 for this Saturday': { budget_php_cents: 50000 },
+  'free date tonight, we have no money': { budget_php_cents: 0 },
+  "we're in Turo, around ₱300": { budget_php_cents: 30000, origin_area: 'Turo' },
+  'anniversary dinner, ₱1000': { budget_php_cents: 100000 },
+  'starting from Poblacion around 7pm': { origin_area: 'Poblacion' },
+  'birthday surprise this Friday, ₱800': { budget_php_cents: 80000 },
+
+  // The interesting half: a named place is not a constraint, but the rest of
+  // the sentence still is. Dropping the whole utterance would also pass a
+  // leak-only check, and would be wrong.
+  'somewhere in Quezon City with ₱400': { budget_php_cents: 40000, origin_area: null },
+  'take me to Starbucks in Manila': { origin_area: null },
+  'plan my Cebu trip': { origin_area: null },
+  'we want to go to Jollibee': { origin_area: null },
+  'that café on the highway': { origin_area: null },
+};
+
 /** Proves the cache: same meaning, different words and punctuation. */
 const REPHRASINGS = [
   ['under 200 tonight', 'Under ₱200, tonight!'],
@@ -193,6 +230,21 @@ async function main() {
   }
   console.log(`  checking against ${names.length} catalogue names`);
 
+  // A precondition, not a formality. The leak check below is "no name from this
+  // list appears in the output" — which passes trivially when the list is
+  // empty, and an empty list is exactly what a failed fetch, an RLS change or a
+  // wiped `places` table would produce. The whole adversarial half of this
+  // criterion would then report PASS having compared nothing.
+  //
+  // This repository has already shipped that shape once: verify-totals.mjs
+  // reported materials 60/60 while every value on both sides was zero.
+  if (names.length === 0) {
+    fail(
+      'the catalogue came back empty, so "no catalogue name leaked" would pass ' +
+      'without checking anything. Fix the fetch before trusting this run.',
+    );
+  }
+
   const email = `amora-intake+${Date.now()}@example.com`;
   const password = `acc-${Math.random().toString(36).slice(2)}-${Date.now()}`;
   const signup = await fetch(`${env.SUPABASE_URL}/auth/v1/signup`, {
@@ -227,6 +279,9 @@ async function main() {
   const results = [];
   const leaks = [];
   const failures = [];
+  // Positive-direction results: what extraction produced, not what it avoided.
+  const wrong = [];
+  let asserted = 0;
 
   for (const utterance of UTTERANCES) {
     const { status, body } = await extract(utterance);
@@ -241,6 +296,21 @@ async function main() {
       if (blob.includes(name.toLowerCase())) {
         leaks.push(`${utterance} → leaked "${name}" in ${JSON.stringify(body.constraints)}`);
       }
+    }
+
+    // The other direction: did it produce what it should have?
+    const expected = EXPECTATIONS[utterance];
+    if (expected) {
+      for (const [field, want] of Object.entries(expected)) {
+        const got = body.constraints?.[field] ?? null;
+        if (got !== want) {
+          wrong.push(
+            `${utterance} → ${field} was ${JSON.stringify(got)}, ` +
+            `expected ${JSON.stringify(want)}`,
+          );
+        }
+      }
+      asserted += 1;
     }
 
     results.push({ utterance, ...body });
@@ -280,18 +350,35 @@ async function main() {
   console.log(`\n  ${results.length}/${UTTERANCES.length} extractions returned 200`);
   console.log(`  written to ${out}`);
 
-  if (failures.length || leaks.length || cacheMisses.length) {
+  console.log(`  ${asserted} utterances checked for what they should produce`);
+
+  if (failures.length || leaks.length || cacheMisses.length || wrong.length) {
     return stop(
       1,
       '\n  FAILED\n' +
         failures.map((f) => `    request: ${f}`).join('\n') +
         leaks.map((l) => `    LEAK: ${l}`).join('\n') +
+        wrong.map((w) => `    WRONG: ${w}`).join('\n') +
         cacheMisses.map((c) => `    cache: ${c}`).join('\n') +
         '\n',
     );
   }
 
+  // The precondition on the positive half. Without it, an EXPECTATIONS table
+  // that stopped matching any utterance — a reworded entry, a typo — would
+  // silently assert nothing and the run would still say PASS.
+  if (asserted < Object.keys(EXPECTATIONS).length) {
+    return stop(
+      2,
+      `\n  NOT EVIDENCE — only ${asserted} of ${Object.keys(EXPECTATIONS).length} ` +
+        'expected utterances were reached, so the positive half checked less\n' +
+        '  than it claims. An entry in EXPECTATIONS no longer matches anything\n' +
+        '  in UTTERANCES.\n',
+    );
+  }
+
   console.log('\n  PASS — no catalogue name appeared in any extraction,');
+  console.log(`  ${asserted} utterances produced the constraints they should,`);
   console.log('  and both rephrasings hit the cache.\n');
   return null;
 }

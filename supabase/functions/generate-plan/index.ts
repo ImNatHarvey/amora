@@ -79,6 +79,9 @@ function buildPrompt(
     '- Never invent a place, an address, a price, a fare or an opening time.',
     '- Never state a cost, a total or a distance. They are computed elsewhere',
     '  and anything you write about money will be discarded.',
+    '- Some activities need materials bought beforehand, and that cost is shown',
+    '  against them. It is added to the plan total, so prefer activities the',
+    '  couple can afford alongside the places. Do not repeat the figure.',
     '- Your "note" is the one thing you author: one short sentence on why this',
     '  stop suits this couple. It must contain no facts not given below.',
     '- Order stops so the evening flows sensibly.',
@@ -93,7 +96,21 @@ function buildPrompt(
     ),
     '',
     'ACTIVITIES (optional, pair one with a stop where it fits):',
-    ...activities.map((a) => `- ${a.activity_id} | ${a.title} | ${a.category ?? ''}`),
+    ...activities.map((a) => {
+      // Only materials money is additive to the plan total, so only materials
+      // money is shown. Quoting a `venue` activity's budget would push the
+      // model away from it to protect a budget the paired place's own price
+      // already accounts for.
+      //
+      // Dividing by 100 is unit formatting of a retrieved row, not costing:
+      // nothing is summed, multiplied by party size, or compared to a budget
+      // here. cost_generated_plan does all of that (invariant 3).
+      const cents = Number(a.min_budget_php_cents ?? 0);
+      const line = `- ${a.activity_id} | ${a.title} | ${a.category ?? ''}`;
+      if (a.cost_kind !== 'materials' || cents <= 0) return line;
+      const scope = a.budget_is_per_person ? 'per person' : 'for the party';
+      return `${line} | needs ₱${cents / 100} of materials ${scope}`;
+    }),
     '',
     correction ? `CORRECTION: ${correction}` : '',
     'Return exactly 3 plans of 2 to 3 stops each.',

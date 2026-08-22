@@ -136,6 +136,47 @@ class StopLine extends StatelessWidget {
   }
 }
 
+/// The breakdown under the total: `fares ₱30 · food ₱360 · materials ₱200`.
+///
+/// A pure function, separate from the widget, for the reason
+/// `tutorialRenderFor` and `constraint_hash.ts` are separate — the rule about
+/// which lines appear is worth testing directly rather than through a render
+/// tree, and it decides how money reads.
+///
+/// **Fares always show, even at ₱0; the other four show only when they are
+/// something.** Not an inconsistency: every outing involves getting there, so a
+/// zero fare is a priced fact worth stating, while a plan with no florist has
+/// no gifts line to state. Four permanent `₱0`s would bury the two lines that
+/// carry the plan.
+///
+/// `zeroIsFree` is false throughout. "free" belongs where ₱0 is the price of
+/// something, not where it is an addend in a breakdown — "Total free" is right,
+/// "fares free" is not (`docs/02-design-system.md` §2).
+String costBreakdownLine(PlanTotals totals) {
+  final lines = totals.lines;
+
+  // A payload from before the breakdown existed — an older `plan_cache` entry,
+  // still valid until `places_version()` moves. Render what it does have rather
+  // than deriving the missing lines here, which would be the device doing
+  // money arithmetic (invariant 3).
+  if (lines == null) {
+    return 'places ${pesos(totals.placesPhpCents, zeroIsFree: false)} · '
+        'fares ${pesos(totals.faresPhpCents, zeroIsFree: false)}';
+  }
+
+  return [
+    'fares ${pesos(lines.faresPhpCents, zeroIsFree: false)}',
+    if (lines.foodPhpCents > 0)
+      'food ${pesos(lines.foodPhpCents, zeroIsFree: false)}',
+    if (lines.materialsPhpCents > 0)
+      'materials ${pesos(lines.materialsPhpCents, zeroIsFree: false)}',
+    if (lines.activitiesPhpCents > 0)
+      'activities ${pesos(lines.activitiesPhpCents, zeroIsFree: false)}',
+    if (lines.giftsPhpCents > 0)
+      'gifts ${pesos(lines.giftsPhpCents, zeroIsFree: false)}',
+  ].join(' · ');
+}
+
 class TotalsBlock extends StatelessWidget {
   const TotalsBlock({required this.totals, super.key});
 
@@ -156,8 +197,7 @@ class TotalsBlock extends StatelessWidget {
           style: theme.textTheme.titleMedium,
         ),
         Text(
-          'places ${pesos(totals.placesPhpCents, zeroIsFree: false)} · '
-          'fares ${pesos(totals.faresPhpCents, zeroIsFree: false)}',
+          costBreakdownLine(totals),
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),

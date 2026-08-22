@@ -413,66 +413,123 @@ worse, half-build it early. Each entry names what blocks it.
 Read this section together with `CLAUDE.md`'s "Explicitly NOT building yet" list.
 Where the two disagree, that list wins.
 
-### 10.1 Navigation — a bottom bar that does not exist yet
+### 10.1 Navigation — BUILT 2026-08-18
 
-**Current state, so nobody plans against a fiction: there is no navigation bar.**
-No `NavigationBar`, no `NavigationDestination`, no `StatefulShellRoute` anywhere
-in the app. Home is a `Column` of `FilledButton`s and every route is reached by
-pushing from it.
+Moved out of "specified, not built". `lib/app/shell.dart`, wired through
+`StatefulShellRoute.indexedStack` in `lib/app/router.dart`.
 
-The target, when nav arrives:
-
-| Order | Destination | Route | Available |
+| Order | Destination | Route | Status |
 |---|---|---|---|
-| 1 | Plan | `/intake` | now |
-| 2 | Memories | `/memories` | now |
-| 3 | Profile | — | needs 10.2 |
-| 4 | Feed | — | Phase 7 |
+| 1 | Plan | `/intake` | built |
+| 2 | Memories | `/memories` | built |
+| 3 | Profile | `/profile` | built |
+| 4 | Feed | — | **Phase 7. Not stubbed.** |
 
-**Feed is added at Phase 7 and not before.** An empty tab makes the app look
-dead, and Phase 7 is a filtered list rather than a feed — `CLAUDE.md` rules out a
-community feed, and the reasoning for the distinction is in `HANDOFF.md`.
+**Feed is not a placeholder.** An empty or disabled fourth tab makes the app
+look dead, and Phase 7 is a filtered list rather than a community feed, which
+`CLAUDE.md`'s not-building list rules out. A test asserts the bar has exactly
+three destinations and that no "Feed" label exists — that assertion is what
+stops it arriving early as a stub.
 
-**Three destinations is not a milestone to pass through.** Until Profile exists
-there are two, and a two-item bottom bar is worse than none — Material's own
-guidance puts the floor at three. So the bar arrives *with* Profile, not before.
+**Three shipped at once, with Profile.** Material's floor is three destinations,
+so the bar could not arrive with Plan and Memories alone and grow later.
 
-### 10.2 Preferences
+**Home is gone.** `HomeScreen`'s entire content was a column of buttons, which
+*was* the navigation — once the bar existed there was nothing left for it to do.
+Its non-planning content (greeting, owned-resource count, preferences, token
+gallery, sign out) moved to Profile. `/` is kept as a redirect to `/intake`
+rather than deleted, so a deep link or an older build's initial location lands
+somewhere real instead of on GoRouter's error page.
 
-Blocked on: a new screen, a `profiles` migration, and — for companion type — the
-persona deferral in `CLAUDE.md` and `00-architecture.md` §11.
+**`indexedStack`, not one navigator.** Each branch keeps its own `Navigator` and
+its own state, so switching away from a half-finished conversation and back does
+not reset it. A rebuilt intake would discard in-flight constraints, and
+recovering them costs a model call on a tier capped at five requests a minute.
+There is a test that fills a chip, switches tabs, returns, and asserts the chip
+survived.
 
-`profiles` today is `id, display_name, city, home_lat, home_lng, created_at,
-onboarded_at`. All three groups below need new columns.
+**What is in a branch and what is not.** Ideas and saved plans sit *inside* the
+Plan branch: they are places you go while planning, so the bar stays and back
+returns to that tab. Plan detail, place detail, add-stop and the plan-request
+form sit **outside** the shell — Material persists the bar across top-level
+destinations, not across every screen.
 
-**Companion type** — single select. `plans.companion_type` already exists and §11
-confirms the column is persona-agnostic, so the storage is ready and the product
-decision is not.
+**Tapping the active destination returns to its root**
+(`goBranch(initialLocation: index == currentIndex)`), which is what a user
+reaches for when they are three screens deep and want out.
 
-`Partner` · `Friends` · `Family` · `Solo` · `Group`
+**Ideas and saved plans moved into the intake app bar**, since the button column
+that used to hold them is gone. Ideas is reachable from the *filled*
+conversation too, not only the empty state: "what could we even do" is a thought
+someone has halfway through, and an affordance that disappears once you start
+typing is not an affordance.
 
-> ⚠️ Everything past `Partner` is persona expansion, which D1 scopes out and §11
-> defers. Shipping this picker *is* shipping friends and families, whatever the
-> retrieval layer does with it. It cannot be built as a UI change.
+> ⚠️ **Three app-bar actions is the known risk on this screen** — two icons plus
+> the "Use the form" text button. Verify at 1.3× font scale before calling it
+> done; if it crowds, "Use the form" is the one that has to keep its words,
+> because it is the extraction fallback.
 
-**Interests** — multi select, no minimum. Used to rank, never to filter: a user
-who ticks nothing must get the same plans as one who ticks everything, or the
-picker becomes a way to accidentally hide the catalogue.
+### 10.2 Preferences — BUILT 2026-08-18
 
-`Food and coffee` · `Outdoors and nature` · `Arts and crafts` ·
-`Sports and fitness` · `Games` · `Music` · `Photography` · `Films and shows` ·
-`Shopping` · `Faith and community` · `Learning something new` ·
-`Just walking around`
+Moved out of "specified, not built". Migrations `20260818121939` and
+`20260818121957`; screen at `lib/features/preferences/preferences_screen.dart`;
+vocabulary in `lib/models/preferences.dart`.
 
-**Usual budget** — single select, and a *default* for the intake chip, never a
-cap. **Per outing for the whole party, not per person** (`00-architecture.md`
-§9).
+`profiles` gained `companion_type`, `interests text[]` and
+`usual_budget_php_cents`. Everything here is optional — nothing gates on it, and
+clearing every answer is a supported state.
 
-`₱0 — free` · `Under ₱200` · `₱200–₱500` · `₱500–₱1,000` · `₱1,000–₱2,000` ·
-`Over ₱2,000`
+**Companion type** — single select, and **only `Partner` is offered**.
 
-Selection styling follows the resource picker: chip grid, `FilterChip`, selected
-state carried by fill and check rather than by colour alone.
+The column's check constraint permits `partner`, `friends`, `family`, `solo` and
+`group`, so widening the persona later is a change to one Dart list rather than a
+migration (`00-architecture.md` §11). But everything past `Partner` *is* persona
+expansion, which D1 scopes out and `CLAUDE.md`'s not-building list names
+explicitly — so the picker offers one value and a test asserts the other four are
+absent.
+
+**Interests** — multi select, no minimum. **Rank, never filter.**
+
+A user who ticks nothing must get the same activities as one who ticks
+everything; only the order moves. Enforced in `retrieve_activities` — with no
+interests every row scores the same, so the empty case is not a special case, it
+is the identical query — and asserted from Dart at the provider seam, because the
+way this breaks is a well-meaning pre-filter added to `ideasProvider`.
+
+`Outdoors and nature` · `Food and coffee` · `Cooking together` ·
+`Arts and crafts` · `Sports and fitness` · `Music` · `Games and staying in`
+
+> **Seven, not the twelve first specified, and the slug is an
+> `activities.category` value rather than a separate vocabulary.** Ranking
+> happens on `category`, so an interest matching no category could not change a
+> single result. Six of the original twelve — Photography, Films and shows,
+> Shopping, Faith and community, Learning something new, Just walking around —
+> were exactly that: a dead control with a nice label, which is the same defect
+> as the 18 resource rows no activity required.
+>
+> Finer-grained interests need an `activities.tags` column to rank against. That
+> is a real feature and worth doing; it is not a relabelling of this one.
+
+**Usual budget** — single select. A **default for the intake budget chip, never a
+cap**, and **per outing for the whole party** (`00-architecture.md` §9).
+
+`free` · `₱200` · `₱500` · `₱1,000` · `₱2,000`
+
+> **Amounts, not bands.** The value's only job is to prefill a number, and a band
+> cannot prefill anything without silently choosing a figure from inside itself.
+> There is no top band for the same reason the sheet has no maximum: the picker
+> is a shortcut and the budget sheet still accepts anything typed.
+
+**The saved budget seeds the sheet, not the constraint.** Writing it into
+`IntakeConstraints` would be an inferred value applied silently, which §8
+forbids, and it would suppress the starter chips — those only show while nothing
+is established. Opening the sheet on their usual number is visible and
+correctable before it commits.
+
+Selection styling follows the resource picker: chip grid, `FilterChip` for the
+multi-select, `ChoiceChip` for the single-selects, selected state carried by fill
+and check rather than by colour alone. Re-tapping a selected `ChoiceChip` clears
+it, because every answer here has to be un-answerable.
 
 ### 10.3 Map above the timeline
 
@@ -502,27 +559,58 @@ Phase 5 lets users add stops and Ideas produces activities that are not anywhere
 - If **no** stop has coordinates, the map is **absent**, not empty. An empty map
   of Bocaue is a bare empty state, which §5 forbids.
 
-### 10.4 Price breakdown
+### 10.4 Price breakdown — BUILT 2026-08-19
 
-Partly blocked. Split deliberately, because one half is buildable and building it
-alone would be a mistake.
+Moved out of "specified, not built". Lines, in order: **fares · food · materials
+· activities · gifts**, then the total — as originally specified, and all five
+now have a table behind them.
 
-Lines, in order: **fares · food · materials · activities · gifts**, then the
-total.
+**The five sum to the total exactly.** That is the property, not a nicety: a
+breakdown whose parts do not account for the whole is decoration. It is asserted
+in SQL and re-checked independently in Node by
+`supabase/functions/generate-plan/verify-totals.mjs`.
 
-- **Fares need the dormant places layer.** They come from `transit_fares` via
-  `fare_for`, and a leg is only priced once both ends have real barangays.
-- **Materials and activities work today** off `activities` alone.
+Where each line comes from:
 
-**Recommendation: do not build the activities-only version.** Invariant 3 says
-the app performs no arithmetic — a breakdown is a *rendering* of what
-`cost_generated_plan` returns, so it cannot ship ahead of the server emitting
-those lines anyway. And fares are the line that matters most: a ₱25 tricycle is
-around 12% of a Bocaue date budget (§12), so a breakdown that omits them teaches
-the wrong shape and is rebuilt the week real places land.
+| Line | Source |
+|---|---|
+| fares | `transit_fares` via `fare_for` |
+| food | place price, where `places.category` is cafe / food / restaurant / market / bakery |
+| gifts | place price, where the category is florist / vendor / gift |
+| activities | place price, every other category — **the default, so nothing is dropped** |
+| materials | `activities.min_budget_php_cents` where `cost_kind = 'materials'` |
+
+`public.cost_line_for_place` owns the category mapping so `build_simple_plan`,
+`cost_generated_plan` and `read_plan` cannot disagree. Its default is
+`activities` deliberately rather than as a fallthrough — a court fee, a park
+entry or a paid viewpoint is money spent in order to do something — and because
+a category nobody has mapped yet must still land somewhere. `places.category` is
+free text and real data will widen it; a default is what stops that silently
+losing pesos.
+
+**Materials is the only activity money that appears**, because it is the only
+activity money that is additive. An activity whose budget is spent *at* the
+paired place (`cost_kind = 'venue'`: café hopping, a street-food crawl) adds
+nothing, since that money is already the place's own price. Counting both
+charged a couple roughly double for one afternoon. See `00-architecture.md` §9.
+
+**Rendering rule: fares always shows, even at ₱0; the other four appear only
+when they are something.** Not an inconsistency — every outing involves getting
+there, so a zero fare is a priced fact worth stating, while a plan with no
+florist has no gifts line to state. Four permanent `₱0`s would bury the two
+lines carrying the plan. `costBreakdownLine` in
+`lib/features/plan_request/plan_parts.dart` is a pure function so that rule can
+be tested without a render tree.
 
 Every amount follows §2's budget colour semantics, including the ₱0 rule: "Total
 free" is right, "fares free" is not.
+
+> **The earlier recommendation here was "do not build the activities-only
+> version", and it has been met rather than overridden.** Both its objections
+> were about *order*: that a breakdown is a rendering of server output so it
+> cannot precede it, and that omitting fares teaches the wrong shape. The server
+> emits all five lines first, and fares is among them. Recorded because the
+> reasoning stays correct and would apply again to the next half-built surface.
 
 ### 10.5 Shared plan detail — Phase 7
 

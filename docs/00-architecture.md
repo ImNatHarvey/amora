@@ -1323,6 +1323,32 @@ not each — so the multiplication happens in the composer, not in the user's he
 Fares are not uniform: a jeepney charges per passenger, a tricycle special trip
 is one flat fare for the vehicle, hence `transit_fares.is_per_person`.
 
+**Activity budgets are two different kinds of money, and the schema now says
+which.** `activities.min_budget_php_cents` meant both "materials you buy
+beforehand" (₱200 of baking ingredients) and "what you spend at the place"
+(₱200 of café hopping), and nothing distinguished them — so no total could
+include it without being wrong. Added on the second kind it double-counts,
+because the paired place's own price already carries that money; omitted
+entirely, which is what happened until Gate C, a ₱200-per-person activity
+silently cost ₱0 and `over_budget` was computed from the understated figure.
+
+- **`activities.cost_kind`** is `materials` or `venue`. Only `materials` is
+  added to a plan total. The default is `materials` on purpose: a wrong `venue`
+  drops money silently, while a wrong `materials` over-states, and the
+  over-budget colour and icon make that visible. A missing figure must be loud —
+  the same principle as "At least ₱X" for an unpriced leg.
+- **`activities.budget_is_per_person`** is the `transit_fares.is_per_person`
+  rule applied to the same problem: two people baking together buy **one** set
+  of ingredients, and one pack of film photographs both of them.
+
+Zeroing the venue rows instead was considered and rejected: `retrieve_activities`
+filters on that column, so a ₱0 `cafe-hopping` would surface on a free-date
+search, and café hopping is not free. What a budget *costs* and whether a plan
+has *already counted it* are two facts, and they need two columns.
+
+The breakdown these feed — fares · food · materials · activities · gifts, summing
+to the total exactly — is `02-design-system.md` §10.4.
+
 **Community is a filtered list, not a chronological feed.**
 "Find a plan I can afford" is a query, and a feed structurally cannot answer it.
 Cards stay photo-forward per `02-design-system.md`, but rank by budget fit.
@@ -1763,3 +1789,73 @@ admission for a stranger.
 
 User-submitted stops stay what Phase 5 already says they are: **a way to add a
 missing stop inside a covered city**, not a coverage strategy.
+
+---
+
+## 13. Withdrawn: activities-first
+
+**Status: withdrawn 2026-08-18, by Nat, before it was ever written down.**
+Recorded here rather than dropped, so it is not re-proposed as a fresh idea.
+
+### What it was
+
+A proposal to lead the product with **activities** rather than **places** —
+deepening the layer that needs no fieldwork (`activities`, 16 generic rows, plus
+`resource_catalog`) and letting the curated catalogue stay thin. In practice it
+would have meant growing activities and resources as the primary investment and
+treating `places` as a later concern.
+
+It surfaced during a UI direction session as a constraint on other work ("do not
+resolve §13 by building around it"), which is how a decision nobody had written
+down came to be blocking two items.
+
+### Why it is withdrawn
+
+Nat's own reasoning, kept in his framing because it is the part that matters:
+
+> It existed because I didn't want to do fieldwork. But `places` has 15 rows and
+> the pipeline works end to end, so nothing is actually blocked. The test rows
+> are a known data gap, not an architecture problem.
+
+That is the correct diagnosis, and it is worth naming the failure mode: **a
+distaste for one kind of work had begun to express itself as an architectural
+position.** Activities-first was never argued on merit — no one claimed
+activities make a better product than places. It was a route around
+`DESK-CHECKLIST.md`. Once that is visible, there is nothing left to decide.
+
+The supporting facts:
+
+- **The pipeline is proven.** Phase 3's three criteria were met on 2026-08-12 —
+  20 generations, zero invalid IDs, 58/58 totals independently recomputed. That
+  is the architecture working, on placeholder data.
+- **Nothing is blocked by the data gap.** Every phase of the MVP is built. What
+  the 15 `test-*` rows prevent is *acceptance*, not construction, and acceptance
+  is supposed to wait for real data.
+- **The moat is the catalogue (D3).** Activities are generic by definition — any
+  chatbot can suggest a picnic. Leading with them would mean investing in the
+  half of the product that is not defensible.
+
+### What this changes
+
+**Nothing structural.** D3 and invariant 1 stand exactly as written; no schema
+moves, no phase is renumbered, no code is affected. §12's scope boundary is
+untouched.
+
+**Phase 2's acceptance criterion stays open**, pending real places. That is an
+honest open item, not a blocker on anything else, and it should not be closed by
+redefining what Phase 2 is for.
+
+**Item 7's resource-catalogue work is unblocked**, and its shape changed as a
+result: 18 of 30 `resource_catalog` rows were required by no activity, so growing
+the catalogue would have lengthened onboarding without changing a single
+retrieval result. Pairing orphans to activities is the version that does
+something.
+
+### One consequence, so it is not misread later
+
+`HANDOFF.md` says Home leads with `/ideas` "because it is the button that works".
+That sentence predates this withdrawal and reads like activities-first doctrine.
+It is not. **It is a statement about the current data, not about the product's
+direction** — `retrieve_activities` needs no curated place, so Ideas is what can
+be demonstrated today. When the catalogue lands, that ordering is expected to be
+revisited on its merits, and doing so is not a reversal of anything.

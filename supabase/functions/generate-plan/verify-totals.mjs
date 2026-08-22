@@ -16,7 +16,8 @@
 //   * the leg MODE       — walk / jeepney / tricycle
 //   * the totals claimed — the thing being checked
 //
-// Every peso is recomputed from `places.price_min_php_cents` and `transit_fares`,
+// Every peso is recomputed from `places.price_min_php_cents`, `transit_fares` and
+// `activities` (materials budgets only — venue spend is the place's own price),
 // fetched over the public REST API with the anon key. `party_price_php_cents`,
 // `fare_php_cents` and the totals in the payload are never used as inputs.
 //
@@ -85,14 +86,56 @@ async function main(env) {
 
   // Both tables are world-readable (§5), so the anon key is enough and no admin
   // credential is involved — the same principle the acceptance harness follows.
-  const places = await rest(env, 'places?select=slug,barangay,price_min_php_cents');
+  const places = await rest(
+    env, 'places?select=slug,barangay,category,price_min_php_cents');
   const fares = await rest(
     env,
     'transit_fares?select=from_area,to_area,mode,fare_php_cents,is_per_person',
   );
+  const activities = await rest(
+    env, 'activities?select=id,slug,min_budget_php_cents,cost_kind,budget_is_per_person');
 
   const priceOf = new Map(places.map((p) => [p.slug, p.price_min_php_cents]));
   const areaOf = new Map(places.map((p) => [p.slug, p.barangay]));
+  const categoryOf = new Map(places.map((p) => [p.slug, p.category]));
+  const activityOf = new Map(activities.map((a) => [a.id, a]));
+
+  // A deliberate second copy of public.cost_line_for_place, in another language.
+  // Calling the SQL function would make this file agree with the thing it is
+  // checking by construction, which is the whole failure mode the header warns
+  // about: a recomputation in the same dialect, with the same joins, in the same
+  // engine can repeat the original's mistake.
+  const lineForPlace = (category) => {
+    switch (String(category ?? '').toLowerCase()) {
+      case 'cafe':
+      case 'food':
+      case 'restaurant':
+      case 'market':
+      case 'bakery':
+        return 'food';
+      case 'florist':
+      case 'vendor':
+      case 'gift':
+        return 'gifts';
+      default:
+        return 'activities';
+    }
+  };
+
+  /**
+   * What an attached activity adds for the whole party.
+   *
+   * Venue spend adds nothing: that money is the paired place's own price, which
+   * price_min_php_cents already carries. Materials multiply by party size only
+   * when the budget is per person — one batch of ingredients serves two people,
+   * one pack of film photographs both of them.
+   */
+  const materialsFor = (activityId, party) => {
+    if (!activityId) return 0;
+    const a = activityOf.get(activityId);
+    if (!a || a.cost_kind !== 'materials') return 0;
+    return (a.min_budget_php_cents ?? 0) * (a.budget_is_per_person ? party : 1);
+  };
 
   /** What the party pays for one leg, or null when no fare is recorded. */
   const fareFor = (fromArea, toArea, mode, party) => {
@@ -111,6 +154,13 @@ async function main(env) {
   let plans = 0;
   let placesOk = 0;
   let faresOk = 0;
+  let materialsOk = 0;
+  // What the run actually exercised, for the preconditions at the end.
+  let stopsSeen = 0;
+  let placesSeen = 0;
+  let materialsSeen = 0;
+  let faresSeen = 0;
+  let linesOk = 0;
   let totalsOk = 0;
   const problems = [];
 
@@ -123,6 +173,9 @@ async function main(env) {
       const key = `run ${run.run} plan ${i}`;
 
       let expectedPlaces = 0;
+      let expectedMaterials = 0;
+      const expectedLines = { fares: 0, food: 0, materials: 0, activities: 0, gifts: 0 };
+
       for (const stop of plan.stops ?? []) {
         const price = priceOf.get(stop.slug);
         if (price === undefined) {
@@ -131,7 +184,16 @@ async function main(env) {
         }
         // Per person, times party size (§9). This is the multiplication that made
         // every total wrong by 2x before it was defined.
-        expectedPlaces += price * party;
+        const stopCents = price * party;
+        expectedPlaces += stopCents;
+        stopsSeen += 1;
+        placesSeen += stopCents;
+        expectedLines[lineForPlace(categoryOf.get(stop.slug))] += stopCents;
+
+        const materials = materialsFor(stop.activity_id, party);
+        expectedMaterials += materials;
+        materialsSeen += materials;
+        expectedLines.materials += materials;
       }
 
       // Leg N arrives at stop N; leg 1 starts from the request's origin area.
@@ -140,11 +202,12 @@ async function main(env) {
         const toArea = areaOf.get(plan.stops[j]?.slug);
         const fromArea = j === 0 ? origin : areaOf.get(plan.stops[j - 1]?.slug);
         const fare = fareFor(fromArea, toArea, leg.mode, party);
-        if (fare !== null) expectedFares += fare;
+        if (fare !== null) { expectedFares += fare; faresSeen += fare; }
       }
 
       const claimed = plan.totals;
-      const expectedTotal = expectedPlaces + expectedFares;
+      expectedLines.fares = expectedFares;
+      const expectedTotal = expectedPlaces + expectedFares + expectedMaterials;
 
       if (expectedPlaces === claimed.places_php_cents) placesOk += 1;
       else {
@@ -158,28 +221,104 @@ async function main(env) {
           `${key}: fares ${expectedFares} vs ${claimed.fares_php_cents}`);
       }
 
+      if (expectedMaterials === (claimed.activities_php_cents ?? 0)) materialsOk += 1;
+      else {
+        problems.push(
+          `${key}: activities ${expectedMaterials} vs ${claimed.activities_php_cents}`);
+      }
+
       if (expectedTotal === claimed.total_php_cents) totalsOk += 1;
       else {
         problems.push(
           `${key}: TOTAL ${expectedTotal} vs ${claimed.total_php_cents}`);
       }
+
+      // The breakdown is only worth showing if it accounts for every peso. Two
+      // separate claims, because they fail differently: a line can be wrong
+      // while the five still sum correctly (money on the wrong line), and the
+      // sum can be wrong while each line looks plausible (money dropped).
+      const claimedLines = claimed.lines ?? {};
+      const wrongLines = Object.keys(expectedLines).filter(
+        (k) => expectedLines[k] !== (claimedLines[k] ?? 0));
+      const claimedSum = Object.values(claimedLines)
+        .reduce((acc, v) => acc + v, 0);
+
+      if (wrongLines.length === 0 && claimedSum === claimed.total_php_cents) {
+        linesOk += 1;
+      } else {
+        if (wrongLines.length > 0) {
+          problems.push(
+            `${key}: lines ${wrongLines.map(
+              (k) => `${k} ${expectedLines[k]} vs ${claimedLines[k]}`).join(', ')}`);
+        }
+        if (claimedSum !== claimed.total_php_cents) {
+          problems.push(
+            `${key}: lines sum to ${claimedSum} but total is ${claimed.total_php_cents}`);
+        }
+      }
     }
   }
+
+  // --- preconditions: what did this run actually touch? ----------------------
+  //
+  // Everything above compares an expected figure to a claimed one, and every
+  // one of those comparisons passes when both sides are zero. So the run can
+  // report 60/60 having checked nothing at all — which is not hypothetical:
+  // on 2026-08-19 it reported materials 60/60 while every plan's materials was
+  // ₱0, because the harness owned no resources and the only priced activities
+  // it could reach were `venue`. It compared 0 to 0 sixty times and called it
+  // evidence.
+  //
+  // These are the non-zero preconditions. They do not check any figure; they
+  // check that there was a figure to check. A criterion that cannot fail is not
+  // a criterion, and it is worse than no criterion because it is believed.
+  const preconditions = [
+    [plans > 0, 'no plans in the evidence at all'],
+    [stopsSeen > 0, 'no stops across any plan, so no place price was checked'],
+    [placesSeen > 0, 'every stop was free, so the party-size multiplication was never exercised'],
+    [materialsSeen > 0,
+      'no plan carried materials, so the activity-costing rule compared 0 to 0. ' +
+      'The harness must own resources — see requestFor in acceptance.mjs'],
+    [faresSeen > 0,
+      'no leg had a recorded fare, so fare costing was never exercised. ' +
+      'Expected while every place sits in one barangay; it still means the ' +
+      'fares column proves nothing'],
+  ];
+
+  const unmet = preconditions.filter(([met]) => !met).map(([, why]) => why);
 
   console.log(`\n  plans checked:  ${plans}`);
   console.log(`  places match:   ${placesOk}/${plans}`);
   console.log(`  fares match:    ${faresOk}/${plans}`);
+  console.log(`  materials match:${materialsOk}/${plans}`);
+  console.log(`  lines match:    ${linesOk}/${plans}`);
   console.log(`  totals match:   ${totalsOk}/${plans}`);
+  console.log(
+    `\n  exercised:      ${stopsSeen} stops, ` +
+    `₱${placesSeen / 100} of places, ₱${faresSeen / 100} of fares, ` +
+    `₱${materialsSeen / 100} of materials`,
+  );
 
-  if (problems.length === 0) {
-    console.log(
-      '\n  Every figure recomputed from places and transit_fares, ' +
-      'without cost_generated_plan.\n',
-    );
-  } else {
+  if (problems.length > 0) {
     console.log(`\n  ${problems.length} problem(s):`);
     for (const problem of problems.slice(0, 25)) console.log(`    ${problem}`);
+    process.exitCode = 1;
+    return;
   }
 
-  process.exitCode = problems.length === 0 ? 0 : 1;
+  if (unmet.length > 0) {
+    console.log('\n  NOT EVIDENCE — the comparisons passed but had nothing to compare:\n');
+    for (const why of unmet) console.log(`    ${why}`);
+    console.log(
+      '\n  Exit 2: this is neither a pass nor a mismatch. It is a run that did\n' +
+      '  not test what it claims to test.\n',
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  console.log(
+    '\n  Every figure recomputed from places, transit_fares and activities, ' +
+    'without cost_generated_plan.\n',
+  );
 }

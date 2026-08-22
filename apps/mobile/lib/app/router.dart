@@ -6,11 +6,12 @@ import '../data/profiles_repository.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/auth/sign_up_screen.dart';
 import '../features/dev/token_gallery_screen.dart';
-import '../features/home/home_screen.dart';
+import '../features/profile/profile_screen.dart';
 import '../features/ideas/ideas_screen.dart';
 import '../features/intake/intake_screen.dart';
 import '../features/memory/memory_timeline_screen.dart';
 import '../features/place/place_detail_screen.dart';
+import '../features/preferences/preferences_screen.dart';
 import '../features/plan/add_stop_screen.dart';
 import '../features/plan/plan_detail_screen.dart';
 import '../features/plan/saved_plans_screen.dart';
@@ -18,10 +19,18 @@ import '../features/onboarding/profile_setup_screen.dart';
 import '../features/onboarding/resource_picker_screen.dart';
 import '../features/plan_request/plan_request_screen.dart';
 import 'auth_refresh.dart';
+import 'shell.dart';
 
 /// Route paths, so no screen hardcodes a string literal.
 abstract final class Routes {
-  static const home = '/';
+  /// Where a signed-in, onboarded user lands, and the first tab.
+  ///
+  /// Was `HomeScreen` until Gate B. That screen's whole content was a column of
+  /// buttons, which *was* the navigation — so once the bar existed there was
+  /// nothing left for it to do. `/` now redirects here rather than 404ing, for
+  /// deep links and for anything still holding the old path.
+  static const home = intake;
+
   static const signIn = '/sign-in';
   static const signUp = '/sign-up';
   static const onboardingProfile = '/onboarding/profile';
@@ -48,6 +57,15 @@ abstract final class Routes {
 
   /// What actually happened — Phase 6's timeline of completed outings.
   static const memories = '/memories';
+
+  /// How the user usually plans. Optional everywhere — nothing gates on it.
+  ///
+  /// Top level rather than nested under a profile screen because Gate B has not
+  /// built one yet. It moves under Profile when the nav arrives.
+  static const preferences = '/preferences';
+
+  /// Who you are, what you own, how you usually plan. The third destination.
+  static const profile = '/profile';
 
   static const devTokens = '/dev/tokens';
 }
@@ -134,9 +152,59 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(
-        path: Routes.home,
-        builder: (context, state) => const HomeScreen(),
+      // The three top-level destinations. Everything else is either pre-session
+      // (auth, onboarding) or a detail screen pushed over the bar.
+      //
+      // Ideas and saved plans live *inside* the Plan branch rather than outside
+      // the shell: they are places you go while planning, so the bar stays and
+      // the back stack belongs to that tab. Plan detail and place detail sit
+      // outside, because Material persists the bar across destinations, not
+      // across every screen.
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            AmoraShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              // Not listed in _publicRoutes or _onboardingRoutes, so the ladder
+              // above already requires a session and finished onboarding — the
+              // resource picker has to have run before retrieval can filter on
+              // what the user owns.
+              GoRoute(
+                path: Routes.intake,
+                builder: (context, state) => const IntakeScreen(),
+              ),
+              GoRoute(
+                path: Routes.ideas,
+                builder: (context, state) => const IdeasScreen(),
+              ),
+              GoRoute(
+                path: Routes.plans,
+                builder: (context, state) => const SavedPlansScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: Routes.memories,
+                builder: (context, state) => const MemoryTimelineScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: Routes.profile,
+                builder: (context, state) => const ProfileScreen(),
+              ),
+              GoRoute(
+                path: Routes.preferences,
+                builder: (context, state) => const PreferencesScreen(),
+              ),
+            ],
+          ),
+        ],
       ),
       GoRoute(
         path: Routes.signIn,
@@ -166,10 +234,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.planRequest,
         builder: (context, state) => const PlanRequestScreen(),
       ),
-      GoRoute(
-        path: Routes.plans,
-        builder: (context, state) => const SavedPlansScreen(),
-      ),
       // Saved plan and place detail. Both take an id and both are behind the
       // same ladder; RLS is what actually decides whether the row comes back,
       // so a guessed id is an empty screen rather than a leak.
@@ -194,19 +258,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             PlaceDetailScreen(placeId: state.pathParameters['id']!),
       ),
       GoRoute(
-        path: Routes.memories,
-        builder: (context, state) => const MemoryTimelineScreen(),
-      ),
-      // Same gate as /plan: the resource picker has to have run before either
-      // screen can filter on what the user owns.
-      GoRoute(
-        path: Routes.ideas,
-        builder: (context, state) => const IdeasScreen(),
-      ),
-      GoRoute(
         path: Routes.devTokens,
         builder: (context, state) => const TokenGalleryScreen(),
       ),
+      // `/` no longer has a screen. Kept as a redirect rather than deleted so a
+      // deep link, a saved shortcut or an older build's initial location lands
+      // somewhere real instead of on GoRouter's error page.
+      GoRoute(path: '/', redirect: (context, state) => Routes.intake),
     ],
   );
 });

@@ -3,5 +3,19 @@
     "commit": "",
     "pr": ""
   },
-  "includeCoAuthoredBy": false
+  "includeCoAuthoredBy": false,
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/supabase/check-drift.mjs\" --hook",
+            "timeout": 60,
+            "statusMessage": "Checking the repo against Supabase"
+          }
+        ]
+      }
+    ]
+  }
 }

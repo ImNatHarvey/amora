@@ -4,11 +4,13 @@ import 'package:mobile/data/intake_repository.dart';
 import 'package:mobile/data/memories_repository.dart';
 import 'package:mobile/data/plans_repository.dart';
 import 'package:mobile/data/profiles_repository.dart';
+import 'package:mobile/data/repository_exception.dart';
 import 'package:mobile/data/resources_repository.dart';
 import 'package:mobile/data/retrieval_repository.dart';
 import 'package:mobile/models/activity.dart';
 import 'package:mobile/models/intake.dart';
 import 'package:mobile/models/memory.dart';
+import 'package:mobile/models/preferences.dart';
 import 'package:mobile/models/profile.dart';
 import 'package:mobile/models/resource.dart';
 import 'package:mobile/models/saved_plan.dart';
@@ -61,6 +63,18 @@ class FakeProfilesRepository implements ProfilesRepository {
   @override
   Future<Profile?> fetchMine() async => profile;
 
+  /// Every preference write, in call order, so a test can assert what was sent
+  /// rather than only what was rendered afterwards.
+  final preferenceWrites = <({
+    CompanionType? companionType,
+    Set<Interest> interests,
+    int? usualBudgetPhpCents,
+  })>[];
+
+  /// Makes the next [updatePreferences] throw, so the error state is reachable
+  /// without a network.
+  bool failNextWrite = false;
+
   @override
   Future<void> updateProfile({String? displayName, String? city}) async {
     final current = profile;
@@ -70,6 +84,43 @@ class FakeProfilesRepository implements ProfilesRepository {
       displayName: displayName ?? current.displayName,
       city: city ?? current.city,
       onboardedAt: current.onboardedAt,
+      // Carried, not defaulted. A fake that dropped these on an unrelated
+      // write would make a screen look like it lost the user's preferences.
+      companionType: current.companionType,
+      interests: current.interests,
+      usualBudgetPhpCents: current.usualBudgetPhpCents,
+    );
+  }
+
+  @override
+  Future<void> updatePreferences({
+    required CompanionType? companionType,
+    required Set<Interest> interests,
+    required int? usualBudgetPhpCents,
+  }) async {
+    if (failNextWrite) {
+      failNextWrite = false;
+      throw const RepositoryException('Could not save your preferences.');
+    }
+
+    preferenceWrites.add((
+      companionType: companionType,
+      interests: interests,
+      usualBudgetPhpCents: usualBudgetPhpCents,
+    ));
+
+    final current = profile;
+    if (current == null) return;
+    profile = Profile(
+      id: current.id,
+      displayName: current.displayName,
+      city: current.city,
+      onboardedAt: current.onboardedAt,
+      // Assigned, not merged: null and empty are how this screen expresses
+      // "cleared", so merging would make clearing impossible to test.
+      companionType: companionType,
+      interests: interests,
+      usualBudgetPhpCents: usualBudgetPhpCents,
     );
   }
 
@@ -82,6 +133,9 @@ class FakeProfilesRepository implements ProfilesRepository {
       displayName: current.displayName,
       city: current.city,
       onboardedAt: DateTime.utc(2026, 7, 31),
+      companionType: current.companionType,
+      interests: current.interests,
+      usualBudgetPhpCents: current.usualBudgetPhpCents,
     );
   }
 }
@@ -147,13 +201,23 @@ class FakeRetrievalRepository implements RetrievalRepository {
   /// against the wrong one.
   final activityBudgetsPhpCents = <int>[];
 
+  /// Every interest set asked for, in call order.
+  ///
+  /// Recorded rather than acted on: interests **rank** in `retrieve_activities`
+  /// and a fake that reordered its own list would be testing the fake. What is
+  /// worth asserting from Dart is that the screen passes what the profile says
+  /// and that the returned set is unchanged either way.
+  final activityInterests = <Set<String>>[];
+
   @override
   Future<List<Activity>> activitiesWithin({
     required int budgetPhpCents,
     required Set<String> ownedResourceIds,
+    Set<String> interestSlugs = const {},
   }) async {
     if (error != null) throw error!;
     activityBudgetsPhpCents.add(budgetPhpCents ~/ RetrievalRepository.partySize);
+    activityInterests.add(interestSlugs);
     return activities;
   }
 

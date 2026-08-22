@@ -1,42 +1,29 @@
--- cost_generated_plan omitted `slug` from each stop, where build_simple_plan
--- includes it. Caught before the Dart layer was written rather than after:
--- Place.fromMap requires slug and would have thrown a null cast on the first
--- generated plan — a failure that only appears once a Gemini key exists,
--- which is the worst possible time to find it.
+-- Gate C, part 1: activity budgets were in no plan total.
 --
--- The two functions return the same stop shape on purpose. That is what lets
--- one Flutter model render both a Phase 2 plan and a generated one, and it is
--- only true if it stays true field by field.
+-- cost_generated_plan stored `activity_id` on each stop and never added the
+-- activity's budget to anything. "Make a scrapbook together" — ₱100–₱400 per
+-- person — cost ₱0 in the plan it was attached to, and `over_budget` was
+-- derived from that same understated figure, so a plan could be presented as
+-- affordable when it was not.
+--
+-- This is invariant 3's failure mode exactly: the server is the only thing
+-- allowed to do arithmetic on money, so anything it forgets to add is money
+-- nobody adds.
+--
+-- Part 2: `totals.lines` — the breakdown, computed here rather than rendered
+-- from parts. Same reason. The UI sums nothing; it prints what this returns.
+--
+-- The activity's MINIMUM budget is used, matching what places do with
+-- price_min_php_cents. A total in this app is a floor, and `is_complete`
+-- already tells the UI when to say so.
+--
+-- Per person, multiplied by party_size (§9), exactly like a place price. Two
+-- people making one scrapbook is arguably one set of materials — but the same
+-- is true of one tricycle, which is why transit_fares has is_per_person and
+-- activities does not. Recorded as a known simplification rather than a
+-- discovery: if it matters, activities needs that column too, and that is a
+-- schema change with a data-collection cost.
 
--- cost_generated_plan — invariants 2 and 3, in one place.
---
--- The model returns a sequence of {place_id, activity_id, start_time,
--- duration_minutes, note} and nothing else. It never returns a price, a fare,
--- a distance or a total, because it is not allowed to do arithmetic on money
--- (invariant 3) and it is not allowed to name a place we did not give it
--- (invariant 1).
---
--- This function does two jobs the Edge Function must not do in TypeScript:
---
--- 1. VALIDATE. Every place_id and activity_id must be inside the candidate set.
---    Crucially it *recomputes* that set from the same constraints rather than
---    trusting a list handed in alongside the model output. What the model was
---    given and what its answer is checked against are then the same rows by
---    construction, which is the whole argument in §4a. A tampered or stale
---    candidate list cannot widen what is accepted.
---
--- 2. COST. Distances, modes, fares and totals are computed here, next to the
---    rows they sum, using the same haversine_m and fare_for the Phase 2 screen
---    exercises. One implementation, so the app and the model can never be shown
---    two different numbers for the same plan.
---
--- It returns rather than raises on invalid input, because §7 step 5 requires
--- one corrective retry and the retry message has to name the offending IDs.
--- A raise would lose them.
---
--- Returns the same jsonb shape build_simple_plan returns, plus `valid`,
--- `invalid_place_ids`, `invalid_activity_ids` and `over_budget`, so the Flutter
--- side can render a generated plan through the model it already has.
 create or replace function public.cost_generated_plan(
   p_city text,
   p_budget_php_cents integer,
@@ -62,23 +49,35 @@ declare
   bad_places     uuid[];
   bad_activities uuid[];
 
-  stops        jsonb := '[]'::jsonb;
-  legs         jsonb := '[]'::jsonb;
-  places_cents integer := 0;
-  fares_cents  integer := 0;
-  unpriced     integer := 0;
-  seq          integer := 0;
+  stops          jsonb := '[]'::jsonb;
+  legs           jsonb := '[]'::jsonb;
+  places_cents   integer := 0;
+  fares_cents    integer := 0;
+  activity_cents integer := 0;
+  unpriced       integer := 0;
+  seq            integer := 0;
+
+  -- The four non-fare lines. Kept as separate counters rather than a jsonb
+  -- accumulator so the arithmetic stays integer the whole way; money is never
+  -- a float in this codebase and jsonb would invite one.
+  line_food       integer := 0;
+  line_gifts      integer := 0;
+  line_activities integer := 0;
+  line_materials  integer := 0;
 
   prev_area text := p_origin_area;
   prev_lat  double precision := p_origin_lat;
   prev_lng  double precision := p_origin_lng;
   prev_name text := p_origin_area;
 
-  stop      jsonb;
-  place     record;
-  leg       record;
-  leg_dist  integer;
+  stop       jsonb;
+  place      record;
+  act        record;
+  leg        record;
+  leg_dist   integer;
   stop_cents integer;
+  act_cents  integer;
+  place_line text;
 begin
   -- The candidate set, recomputed. Never passed in.
   select array_agg(c.place_id), min(c.radius_m)
@@ -141,6 +140,37 @@ begin
     -- Per-person price, paid once by each member of the party (§9).
     stop_cents := coalesce(place.price_min_php_cents, 0) * party;
 
+    -- The activity attached to this stop, if the model chose one. Validated
+    -- above, so a row is guaranteed to exist when the id is non-null.
+    act_cents := 0;
+    if nullif(stop ->> 'activity_id', '') is not null then
+      select a.min_budget_php_cents, a.is_diy
+        into act
+      from public.activities a
+      where a.id = (stop ->> 'activity_id')::uuid;
+
+      act_cents := coalesce(act.min_budget_php_cents, 0) * party;
+
+      -- A DIY activity's budget IS its materials. That is the whole difference
+      -- between the two lines, and it is why is_diy decides rather than
+      -- category: "cook a meal together" buys ingredients, "cafe hopping" buys
+      -- an experience.
+      if act.is_diy then
+        line_materials := line_materials + act_cents;
+      else
+        line_activities := line_activities + act_cents;
+      end if;
+    end if;
+
+    place_line := public.cost_line_for_place(place.category);
+    if place_line = 'food' then
+      line_food := line_food + stop_cents;
+    elsif place_line = 'gifts' then
+      line_gifts := line_gifts + stop_cents;
+    else
+      line_activities := line_activities + stop_cents;
+    end if;
+
     legs := legs || jsonb_build_object(
       'seq', seq,
       'from_name', prev_name,
@@ -165,6 +195,10 @@ begin
       'price_min_php_cents', place.price_min_php_cents,
       'price_max_php_cents', place.price_max_php_cents,
       'party_price_php_cents', stop_cents,
+      -- What the attached activity adds, for the party. Zero when there is no
+      -- activity, so the field always exists and the UI never has to decide
+      -- what a missing key means.
+      'activity_price_php_cents', act_cents,
       'distance_m', public.haversine_m(
         p_origin_lat, p_origin_lng, place.lat, place.lng),
       'start_time', stop ->> 'start_time',
@@ -174,7 +208,8 @@ begin
       'note', stop ->> 'note'
     );
 
-    places_cents := places_cents + stop_cents;
+    places_cents   := places_cents + stop_cents;
+    activity_cents := activity_cents + act_cents;
 
     if leg.fare_known then
       fares_cents := fares_cents + leg.fare_php_cents;
@@ -203,31 +238,35 @@ begin
     'totals', jsonb_build_object(
       'places_php_cents', places_cents,
       'fares_php_cents', fares_cents,
-      'total_php_cents', places_cents + fares_cents,
+      -- New, and the bug this migration exists for. Was silently absent from
+      -- every total.
+      'activities_php_cents', activity_cents,
+      'total_php_cents', places_cents + fares_cents + activity_cents,
       'unpriced_legs', unpriced,
-      'is_complete', unpriced = 0
+      'is_complete', unpriced = 0,
+      -- The breakdown, in render order. Every peso in total_php_cents lands on
+      -- exactly one of these five, which is the property worth testing: the
+      -- lines must sum to the total or the breakdown is decoration.
+      'lines', jsonb_build_object(
+        'fares', fares_cents,
+        'food', line_food,
+        'materials', line_materials,
+        'activities', line_activities,
+        'gifts', line_gifts
+      )
     ),
-    -- Not a rejection. A plan the user cannot afford is a real answer and the
-    -- UI has a colour and an icon for it; silently dropping stops to fit would
-    -- be the composer lying about what it found.
-    'over_budget', (places_cents + fares_cents) > p_budget_php_cents
+    'over_budget',
+      (places_cents + fares_cents + activity_cents) > p_budget_php_cents
   );
 end;
 $$;
 
--- A `comment on function cost_generated_plan(...)` stood here and was never
--- applied — `apply_migration` takes SQL inline, and the session that ran this
--- pasted the statements without it. Removed 2026-08-19 when
--- `supabase/check-drift.mjs` found the divergence, so this file is once again a
--- record of what actually ran.
---
--- Nothing is lost: the function's comment is set by
--- 20260819021108_gate_c_cost_kind_drives_the_lines, and re-adding the old text
--- here would only have it overwritten on replay anyway.
-
--- Not granted to authenticated. The Edge Function calls this with the service
--- role: letting a device validate its own generated plan would put both halves
--- of the trust boundary on the same side of it.
-revoke execute on function public.cost_generated_plan(
-  text, integer, timestamptz, text, double precision, double precision, jsonb, uuid[], integer)
-from public, anon, authenticated;
+comment on function public.cost_generated_plan(
+  text, integer, timestamptz, text, double precision, double precision, jsonb, uuid[], integer) is
+  'Validates a model-produced stop sequence against a freshly recomputed '
+  'candidate set (invariant 2) and costs it server-side (invariant 3). Totals '
+  'include attached activity budgets, per person and multiplied by party_size; '
+  'totals.lines breaks the total into fares, food, materials, activities and '
+  'gifts, and those five sum to total_php_cents. Returns valid=false with the '
+  'offending IDs rather than raising, so the caller can issue its one '
+  'corrective retry.';

@@ -60,7 +60,7 @@ const CSV_SPECS = {
     columns: [
       'slug', 'title', 'category', 'min_budget_php', 'max_budget_php',
       'duration_minutes', 'required_resource_slugs', 'weather_dependent',
-      'is_diy', 'tutorial_url',
+      'is_diy', 'tutorial_url', 'cost_kind', 'budget_is_per_person',
     ],
     key: ['slug'],
   },
@@ -234,7 +234,20 @@ function assertUniqueKey(name, records, keyFields) {
 const sqlText = (v) =>
   v === undefined || v === null || v === '' ? 'null' : `'${v.replace(/'/g, "''")}'`;
 
-const sqlBool = (v) => (String(v).toLowerCase() === 'true' ? 'true' : 'false');
+// Strict, because a boolean that quietly defaults is a boolean that decides
+// money. `budget_is_per_person` multiplies a materials budget by party size,
+// so `flase` used to mean "one set of ingredients" and cost the couple half
+// what it should have — with nothing anywhere saying so. Every boolean column
+// in every seed CSV is already exactly `true` or `false`; this keeps it that
+// way rather than coercing the next typo.
+function sqlBool(v, { field, row } = { field: 'boolean', row: {} }) {
+  const s = String(v).toLowerCase();
+  if (s !== 'true' && s !== 'false') {
+    throw new Error(
+      `${row.__file}:${row.__line} — ${field} must be true or false: "${v}"`);
+  }
+  return s;
+}
 
 function sqlNumber(v, { field, row }) {
   if (v === '') return 'null';
@@ -454,7 +467,7 @@ function placesSql(rows) {
   ${openingHoursToJsonb(r.opening_hours, r)},
   ${pesosToCents(r.price_min_php, ctx('price_min_php'))},
   ${pesosToCents(r.price_max_php, ctx('price_max_php'))},
-  ${sqlBool(r.indoor)}, ${sqlBool(r.sunset_facing)},
+  ${sqlBool(r.indoor, ctx('indoor'))}, ${sqlBool(r.sunset_facing, ctx('sunset_facing'))},
   'curated', 'owner',
   ${sqlText(r.social_url)}, ${sqlText(r.contact_number)}, ${sqlText(r.notes)},
   now(), ${r.verified_on === '' ? 'null' : `${sqlText(r.verified_on)}::date`},
@@ -519,16 +532,33 @@ end $$;`);
         ? `'{}'::uuid[]`
         : `array(select rc.id from public.resource_catalog rc where rc.slug = any(${sqlTextArray(slugs)}))`;
 
+    // cost_kind decides whether this budget is added to a plan total at all,
+    // so an unrecognised value must stop the import rather than reach the check
+    // constraint as an opaque failure halfway through applying seed.sql.
+    if (r.cost_kind !== 'materials' && r.cost_kind !== 'venue') {
+      throw new Error(
+        `${r.__file}:${r.__line} — cost_kind must be materials or venue: ` +
+          `"${r.cost_kind}". materials is bought beforehand and adds to the ` +
+          'plan total; venue is spent at the paired place, which already ' +
+          'carries it as the place price.',
+      );
+    }
+
     statements.push(`insert into public.activities (
   slug, title, category, min_budget_php_cents, max_budget_php_cents,
-  duration_minutes, required_resource_ids, weather_dependent, is_diy, tutorial_url
+  duration_minutes, required_resource_ids, weather_dependent, is_diy,
+  tutorial_url, cost_kind, budget_is_per_person
 ) values (
   ${sqlText(r.slug)}, ${sqlText(r.title)}, ${sqlText(r.category)},
   ${pesosToCents(r.min_budget_php, ctx('min_budget_php'))},
   ${pesosToCents(r.max_budget_php, ctx('max_budget_php'))},
   ${sqlInt(r.duration_minutes, ctx('duration_minutes'))},
   ${resourceIds},
-  ${sqlBool(r.weather_dependent)}, ${sqlBool(r.is_diy)}, ${sqlText(r.tutorial_url)}
+  ${sqlBool(r.weather_dependent, ctx('weather_dependent'))},
+  ${sqlBool(r.is_diy, ctx('is_diy'))},
+  ${sqlText(r.tutorial_url)},
+  ${sqlText(r.cost_kind)},
+  ${sqlBool(r.budget_is_per_person, ctx('budget_is_per_person'))}
 )
 on conflict (slug) do update set
   title = excluded.title,
@@ -539,7 +569,9 @@ on conflict (slug) do update set
   required_resource_ids = excluded.required_resource_ids,
   weather_dependent = excluded.weather_dependent,
   is_diy = excluded.is_diy,
-  tutorial_url = excluded.tutorial_url;`);
+  tutorial_url = excluded.tutorial_url,
+  cost_kind = excluded.cost_kind,
+  budget_is_per_person = excluded.budget_is_per_person;`);
   }
 
   return statements;
@@ -553,7 +585,7 @@ function transitFaresSql(rows) {
 ) values (
   ${sqlText(r.from_area)}, ${sqlText(r.to_area)}, ${sqlText(r.mode)},
   ${pesosToCents(r.fare_php, ctx('fare_php'))},
-  ${sqlBool(r.is_per_person)}, ${sqlTimestamp(r.verified_at)}
+  ${sqlBool(r.is_per_person, ctx('is_per_person'))}, ${sqlTimestamp(r.verified_at)}
 )
 on conflict (from_area, to_area, mode) do update set
   fare_php_cents = excluded.fare_php_cents,

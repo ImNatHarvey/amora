@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/preferences.dart';
 import '../models/profile.dart';
 import 'auth_repository.dart';
 import 'repository_exception.dart';
@@ -55,6 +56,37 @@ class ProfilesRepository {
         }).eq('id', userId);
       },
       fallback: 'Could not save your profile.',
+    );
+  }
+
+  /// Writes the preference triple.
+  ///
+  /// Separate from [updateProfile] and deliberately **not** field-by-field
+  /// optional: the preferences screen owns all three and submits all three, so
+  /// clearing an interest set or unsetting a budget has to be expressible.
+  /// Passing null for [companionType] or [usualBudgetPhpCents] writes null,
+  /// which is what "no preference" means in the column.
+  Future<void> updatePreferences({
+    required CompanionType? companionType,
+    required Set<Interest> interests,
+    required int? usualBudgetPhpCents,
+  }) {
+    return guard(
+      () async {
+        final userId = _client.auth.currentUser?.id;
+        if (userId == null) {
+          throw const RepositoryException('You are not signed in.');
+        }
+
+        await _client.from('profiles').update({
+          'companion_type': companionType?.slug,
+          // Sorted so two identical selections produce identical rows, which
+          // keeps a diff of the table readable and makes tests order-stable.
+          'interests': (interests.map((i) => i.slug).toList()..sort()),
+          'usual_budget_php_cents': usualBudgetPhpCents,
+        }).eq('id', userId);
+      },
+      fallback: 'Could not save your preferences.',
     );
   }
 

@@ -1,7 +1,6 @@
 slug,name,category,icon
 picnic-mat,Picnic mat,outdoor,deck
 tent,Tent,outdoor,cabin
-camping-gear,Camping gear,outdoor,camping
 folding-chairs,Folding chairs,outdoor,chair
 cooler,Cooler or ice box,outdoor,kitchen
 flashlight,Flashlight,outdoor,flashlight_on
@@ -29,3 +28,5 @@ projector,Projector,tech,cast
 bicycle,Bicycle,transport,pedal_bike
 motorcycle,Motorcycle,transport,two_wheeler
 car,Car,transport,directions_car
+videoke-machine,Videoke machine,music,mic
+guitar,Guitar or ukulele,music,music_note

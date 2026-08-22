@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/data/auth_repository.dart';
+import 'package:mobile/data/profiles_repository.dart';
 import 'package:mobile/data/resources_repository.dart';
 import 'package:mobile/data/retrieval_repository.dart';
 import 'package:mobile/features/ideas/diy_tutorial.dart';
 import 'package:mobile/features/ideas/ideas_screen.dart';
 import 'package:mobile/models/activity.dart';
+import 'package:mobile/models/preferences.dart';
+import 'package:mobile/models/profile.dart';
 import 'package:mobile/theme/app_theme.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
@@ -52,6 +56,7 @@ Future<FakeRetrievalRepository> _pump(
   WidgetTester tester, {
   List<Activity> activities = const [],
   Object? error,
+  Set<Interest> interests = const {},
 }) async {
   final retrieval = FakeRetrievalRepository(error: error)
     ..activities = activities;
@@ -62,6 +67,19 @@ Future<FakeRetrievalRepository> _pump(
         retrievalRepositoryProvider.overrideWithValue(retrieval),
         resourcesRepositoryProvider
             .overrideWithValue(FakeResourcesRepository(owned: {'r1'})),
+        // Ideas ranks on the profile's interests, so the screen now reads it.
+        // Without these two the provider reaches a real Supabase client.
+        authRepositoryProvider.overrideWithValue(FakeAuthRepository(userId: 'u1')),
+        profilesRepositoryProvider.overrideWithValue(
+          FakeProfilesRepository(
+            profile: Profile(
+              id: 'u1',
+              displayName: 'Nat',
+              city: 'Bocaue',
+              interests: interests,
+            ),
+          ),
+        ),
       ],
       child: MaterialApp(
         theme: AppTheme.light,
@@ -149,6 +167,63 @@ void main() {
     expect(retrieval.activityBudgetsPhpCents, contains(50 * 100 ~/ 2));
   });
 
+  // --- Interests -----------------------------------------------------------
+
+  testWidgets('interests reach the server as category slugs', (tester) async {
+    final retrieval = await _pump(
+      tester,
+      activities: const [_free],
+      interests: {Interest.music, Interest.outdoor},
+    );
+
+    // Slugs, not labels. They are matched against `activities.category` in
+    // `retrieve_activities`, so a display string here would silently rank
+    // nothing — the failure would look exactly like "the user has no taste".
+    expect(retrieval.activityInterests.first, {'music', 'outdoor'});
+  });
+
+  testWidgets('interests never change what is returned', (tester) async {
+    // The rule the whole design rests on: a user who ticks nothing must see the
+    // same activities as one who ticks everything. Only the order moves.
+    //
+    // Enforced in `retrieve_activities`; asserted here at the seam, because the
+    // way this breaks in Dart is a well-meaning pre-filter added to the
+    // provider rather than a change to the SQL.
+    await _pump(tester, activities: const [_free, _paid]);
+    expect(find.text('Sunset watching'), findsOneWidget);
+    expect(find.text('Cook a meal together'), findsOneWidget);
+
+    await _pump(
+      tester,
+      activities: const [_free, _paid],
+      interests: Interest.values.toSet(),
+    );
+    expect(find.text('Sunset watching'), findsOneWidget);
+    expect(find.text('Cook a meal together'), findsOneWidget);
+
+    await _pump(
+      tester,
+      activities: const [_free, _paid],
+      interests: {Interest.music},
+    );
+    expect(find.text('Sunset watching'), findsOneWidget);
+    expect(find.text('Cook a meal together'), findsOneWidget);
+  });
+
+  testWidgets('the catalogue count is never ranked by interest',
+      (tester) async {
+    // The second, unfiltered call exists to say "5 of 33 fit". Passing
+    // interests into it would be harmless today and wrong in principle: it
+    // counts the catalogue, not a view of it.
+    final retrieval = await _pump(
+      tester,
+      activities: const [_free],
+      interests: {Interest.music},
+    );
+
+    expect(retrieval.activityInterests.last, isEmpty);
+  });
+
   // --- DIY tutorials -------------------------------------------------------
   //
   // `tutorial_url` is null on all five DIY rows in the database, so the case
@@ -177,6 +252,11 @@ void main() {
   testWidgets('a non-DIY activity never shows a tutorial', (tester) async {
     await _pump(tester, activities: const [_free]);
 
+    // The positive first, and it is not decoration: with only `findsNothing`
+    // below, a broken `_pump` — a missing provider override, an empty list —
+    // would render nothing at all and this test would pass for the wrong
+    // reason. A check that survives the screen not existing is not a check.
+    expect(find.text('Sunset watching'), findsOneWidget);
     expect(find.text('Watch the tutorial'), findsNothing);
   });
 

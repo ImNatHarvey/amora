@@ -2,7 +2,7 @@
 
 Context bridge for fresh sessions. Everything structural lives in
 `00-architecture.md` and `02-design-system.md` — this file is only what those
-don't say. Last updated for the Phase 6 commit.
+don't say. Last updated for the Gate C commit.
 
 ## Where we are
 
@@ -13,8 +13,14 @@ here and a shippable MVP is **data and a phone**, not development.
 Phases 0 and 1 are complete and accepted on device. Phase 3b was **accepted
 2026-08-10**, and **Phase 3's three criteria were all met on 2026-08-12** — 20
 generations with zero invalid IDs, a cache hit, and 58/58 totals recomputed
-independently. **Phases 2 and 4 are code complete and neither is accepted**; see
-the ledger below for what is outstanding and why.
+independently. **Re-run on 2026-08-19 after Gate C: 20/20, 60/60.** **Phases 2
+and 4 are code complete and neither is accepted**; see the ledger below for what
+is outstanding and why.
+
+Since then, four gates off the UI-direction session: A (preferences), B
+(navigation), C (the price breakdown, which fixed a live bug where activity
+budgets reached no plan total). D — the map — is next and is blocked on real
+coordinates, like everything else.
 
 > Phase 3 passing is narrower than it sounds and the distinction matters: it
 > proves the *pipeline* holds — the model never named a place outside the
@@ -77,6 +83,12 @@ rows and the resource picker's output. Home leads with it, because it is the but
 that works; "Plan something" is still there and still needs the catalogue. Details
 in `00-architecture.md` §8 under Phase 2 — including the line it must not cross,
 which is that Ideas answers *what* and never *where*.
+
+> **That ordering is a fact about the data, not a product direction**, and the
+> distinction matters now that §13 is withdrawn. Ideas leads because it is what
+> can be demonstrated on placeholder places — not because activities are the
+> product. When the catalogue lands, revisit the ordering on its merits; doing so
+> reverses nothing.
 
 **What to check when the phone is back on**, in one pass, dark mode at 1.3× font
 scale: `/ideas`, `/plan-request`, the `/intake` conversation, a saved plan
@@ -836,7 +848,7 @@ come back:
 
 | Assumed | Actual |
 |---|---|
-| §13 (activities-first vs places) is open | **There is no §13.** `00-architecture.md` ends at §12, and "activities-first" appears nowhere in `docs/`. Confirmed by Nat as an unwritten decision — **still unwritten** |
+| §13 (activities-first vs places) is open | There was no §13 — the doc ended at §12 and "activities-first" appeared nowhere in `docs/`. Confirmed by Nat as an unwritten decision, then **withdrawn 2026-08-18**. Now written up as `00-architecture.md` §13, recorded as withdrawn so it is not re-proposed |
 | `places` has zero rows | 15, all `test-*` |
 | nav "stays three tabs until Phase 7" | **Zero tabs.** No `NavigationBar` anywhere; home is a `Column` of buttons |
 | starter chips are numbered | already unnumbered |
@@ -911,6 +923,440 @@ the app and needs no new resources at all.
   and is forbidden — it delays startup, which is what `appStartupProvider` exists
   to avoid. Recorded as `02-design-system.md` §6's one sanctioned exception to
   "never animate for delight alone".
+
+## Gate A — preferences. Built 2026-08-18.
+
+Two migrations (`20260818121939`, `20260818121957`), one screen, one model file.
+Spec is `02-design-system.md` §10.2, now marked BUILT rather than specified.
+
+**`profiles` gained `companion_type`, `interests text[]`, `usual_budget_php_cents`.**
+RLS untouched — `profiles_select_own` / `profiles_update_own` filter on the
+primary key, and adding columns does not widen a policy that does that.
+
+**Companion type stores five values and offers one.** The check constraint
+permits `partner|friends|family|solo|group` so widening the persona is later a
+change to `CompanionType.offered` rather than a migration (§11). Only `partner`
+is selectable, because offering the rest *is* shipping friends and families
+whatever retrieval does with the value. **There is a test asserting the other
+four are absent** — that test is the thing between "storage is ready" and "the
+feature shipped by accident".
+
+**Interests are `activities.category` slugs, and there are seven, not the twelve
+first specified.** Ranking happens on `category`, so an interest matching no
+category could not change a single result — Photography, Films, Shopping, Faith,
+Learning and Just-walking-around were all exactly that. **Same defect as the 18
+orphan resources, one week apart**, which is why it was caught. Finer interests
+need an `activities.tags` column to rank against; that is a real feature, not a
+relabelling.
+
+**`retrieve_activities` ranks and never filters.** Verified against the live
+database in four directions before the Dart went in: no interests → 33 rows,
+`music` only → 33, every category → 33, a bogus slug → 33, and the music rows
+sort first. Two-argument callers (`build_simple_plan`, `cost_generated_plan`, the
+`generate-plan` Edge Function) still resolve through the default and were not
+touched.
+
+**The saved budget seeds the sheet, not the constraint.** Writing it into
+`IntakeConstraints` would be an inferred value applied silently (§8) *and* would
+suppress the starter chips, since those only render while nothing is
+established. `_askBudget` passes it as the sheet's opening value instead.
+
+**Reachable from home, temporarily.** "How you usually plan" sits below the four
+buttons that do the job — preferences change ordering, never whether the app
+works, so they must not read as a setup step. It moves under Profile at Gate B.
+
+**Gotchas:**
+
+- **`ideas_test.dart` broke the moment Ideas read the profile.** It had no
+  `profilesRepositoryProvider` override, so `currentProfileProvider` reached a
+  real Supabase client and every activity assertion failed with an empty list.
+  Any screen that starts reading the profile needs both that override and
+  `authRepositoryProvider`.
+- **The preferences screen has three sections and a widget-test viewport is
+  800 px.** The budget chips did not exist to tap. Raise
+  `tester.view.physicalSize` — same fix and same reason as `add_stop_screen` and
+  the Phase 6 sheet. Scrolling drags across the chips and starts a gesture.
+- **`{for (final x in ?maybeNull) ...}` does not parse.** The null-aware element
+  marker works on the *element*, not on the iterable of a `for-in`.
+
+138 tests (up from 128), analyze clean, advisors show nothing new. **Not verified
+on the phone** — that pass now owes the splash, the budget sheet and this screen.
+
+## Gate B — profile and the nav bar. Built 2026-08-18.
+
+`lib/app/shell.dart` plus a `StatefulShellRoute.indexedStack` in `router.dart`,
+and `lib/features/profile/profile_screen.dart`. Spec is `02-design-system.md`
+§10.1, now BUILT.
+
+**`HomeScreen` is deleted.** Its entire content was a column of buttons, which
+*was* the navigation — once the bar existed there was nothing left for it to do.
+Non-planning content moved to Profile. **`/` is kept as a redirect to `/intake`**
+rather than removed, so a deep link or an older build's initial location lands
+somewhere real instead of GoRouter's error page. `Routes.home` is now an alias
+for `Routes.intake`, so the redirect ladder did not have to change.
+
+**Three destinations: Plan · Memories · Profile. Feed is Phase 7 and is not
+stubbed**, and there is a test asserting the bar has exactly three and that no
+"Feed" label exists. Three shipped together because Material's floor is three —
+the bar could not arrive with two and grow.
+
+**`indexedStack` rather than one navigator, and this is the load-bearing
+choice.** Each branch keeps its own `Navigator` and state, so switching away
+from a half-finished conversation and back does not reset it. A rebuilt intake
+discards in-flight constraints, and recovering them costs a model call on a tier
+capped at five per minute. There is a test that fills a chip, switches tabs,
+returns, and asserts the chip survived.
+
+**Ideas and saved plans are inside the Plan branch**, so the bar stays and back
+returns to that tab. Plan detail, place detail, add-stop and the plan-request
+form are **outside** the shell — the bar persists across destinations, not across
+every screen.
+
+**Ideas and saved plans moved into the intake app bar**, since the column that
+held them is gone. Ideas is reachable from the filled conversation, not only the
+empty state.
+
+> ⚠️ **The intake app bar now has three actions** — two icons plus the "Use the
+> form" text button. That is the crowding risk to check at 1.3× font scale on
+> the device pass. If it breaks, "Use the form" keeps its words: it is the
+> extraction fallback.
+
+**Gotchas:**
+
+- **`widget_test`'s "fully set up lands on home" asserted `Hello, Nat`**, a
+  string that only ever existed on the home screen. Any test asserting on home
+  copy has to move to a destination.
+- **The 800 px viewport trap hit a third time**, on Profile's sign-out tile.
+  Two cards plus two list tiles overflow it and a `ListView` does not build what
+  is off-screen. Raise `tester.view.physicalSize`; never scroll.
+
+147 tests (up from 138), analyze clean. **Not verified on the phone** — the
+device pass now owes the splash, the budget sheet, preferences, and the whole
+navigation restructure.
+
+## Gate C — the price breakdown. Built 2026-08-19.
+
+Spec is `02-design-system.md` §10.4, now BUILT. The money rules are
+`00-architecture.md` §9.
+
+### Two migrations were live in the database and in no commit
+
+**Read this first; it is the most reusable thing in this section.** A session on
+2026-08-18 applied `20260818125746_gate_c_cost_line_for_place` and
+`20260818125849_gate_c_cost_activities_and_emit_lines` through MCP, then never
+committed them. Gate B was built and committed afterwards, so the orphans sat
+between two commits with nothing pointing at them. Everything else matched.
+
+Both were **recovered verbatim** from `supabase_migrations.schema_migrations`
+and committed as files, checked byte-for-byte with `md5(array_to_string(
+statements, E'\n'))` against the same digest computed on disk. Every Gate C
+migration was checked the same way.
+
+> **`apply_migration` stamps its own version and the ledger is the only record
+> of what ran.** After every apply: read the stamped version back, rename the
+> local file to match, and diff the file against the stored statements. That is
+> now three separate incidents from the same cause — the stale deployed
+> `generate-plan` bundle, the two mismatched Phase 6 filenames, and this.
+
+### What the orphaned work got right, and the two things it got wrong
+
+Kept: the **five-line breakdown** and `cost_line_for_place`. An earlier reading
+of §10.4 in this session claimed food and gifts "cannot be sourced" because
+`places.category` is free text — **that was wrong**, and the orphan answered it:
+the mapping defaults to `activities`, so an unmapped category lands somewhere
+rather than being dropped, and the five lines still sum to the total.
+
+Replaced, both about activity money:
+
+- **It added every attached activity's budget at `min_budget × party`.** So
+  `cafe-hopping` (₱200pp) on top of a ₱180 café charged a couple ~₱760 for one
+  afternoon — the place price already *is* that money.
+- **It split materials from activities on `is_diy`**, which answers "is there a
+  tutorial" rather than "where does the money go", and misfiled
+  `pack-a-cooler` and `instant-photo-hunt` (both materials, both
+  `is_diy = false`). It also cannot express the venue case at all.
+
+Its own comment had already named the gap — *"if it matters, activities needs
+that column too"*. It matters. `cost_kind` and `budget_is_per_person` are that
+column, and `is_diy` no longer decides any money.
+
+### The shape now
+
+`activities` gained `cost_kind` (`materials` | `venue`) and
+`budget_is_per_person`. Both composers **and** `read_plan` emit
+`totals.lines` — five keys summing to `total_php_cents` — plus
+`activities_php_cents`, and every stop carries `activity_price_php_cents`.
+
+**`read_plan` was the hole worth closing.** Only `cost_generated_plan` emitted
+lines, so saving a plan and reopening it silently changed the payload shape: the
+breakdown you tapped Save on did not come back. Nothing crashed only because
+Dart did not read those keys yet.
+
+**Materials money is stored on `plan_items.activity_cost_php_cents`; place lines
+are derived at read time.** Deliberately asymmetric. `write_plan_stops` is the
+one recompute path, and re-deriving the activity budget in `read_plan` would let
+a later edit to `min_budget_php_cents` retroactively rewrite the cost of an
+outing somebody already had. A place's *category*, though, belongs to the place,
+so recategorising one place should fix every breakdown that mentions it.
+
+### Verified
+
+- **In SQL, in both directions**, against a ₱150pp café: `bake-something`
+  (₱200pp, per-party) adds **₱200 not ₱400**; `pack-a-cooler` (₱100pp,
+  per-person) adds **₱200**; `cafe-hopping` adds **nothing** and leaves the
+  total identical to the no-activity case. The two per-party/per-person cases
+  landing on the same ₱200 is a coincidence of the seed data, but it still
+  discriminates: ignoring the flag gives ₱400 on one and ₱100 on the other.
+- **Round trip**: generate → `save_plan` → `read_plan` returns identical `lines`
+  and total. Run inside a `do $$ … raise exception $$` so it rolls back and
+  leaves no test plan behind — worth reusing.
+- **Acceptance re-run**: 20/20, zero refused, 10 fresh then 10 cache, 60 plans.
+  `verify-totals.mjs` recomputes places, fares, materials, the five lines and
+  the total independently in Node: **60/60 on all five**.
+
+> **The first re-run's materials check was vacuous, and fixing the harness is
+> the reusable lesson here.** It reported 60/60 while every plan's materials was
+> ₱0 — the harness sent no `owned_resource_ids`, `retrieve_activities` filters
+> on `required_resource_ids <@ owned`, and every *priced* activity requiring
+> nothing is `venue`. So it compared 0 to 0 sixty times and called it a pass.
+> The harness now owns the whole catalogue, fetched at runtime rather than
+> hardcoded to this project's uuids.
+>
+> **Check what a green criterion actually touched**, the same way the cache-hit
+> count had to be read rather than the pass. A criterion that cannot fail is not
+> evidence.
+
+What the two runs covered between them, both against the independent Node
+recomputation:
+
+| Branch | Coverage |
+|---|---|
+| venue adds nothing | **36 pairings** — `street-food-crawl` ×26, `cafe-hopping` ×10. The old code would have added ₱6,600 of double-counting across the run |
+| materials, per-party | **10 pairings** — `diy-paper-flowers` ×4 (₱50), `instant-photo-hunt` ×6 (₱100), ₱800 total. Ignoring the flag would have made it ₱1,600 |
+| materials, per-person | SQL assertion only; no per-person materials activity was paired in 60 plans |
+
+`instant-photo-hunt` is `is_diy = false`, so those six pairings are exactly the
+rows the old split misfiled onto the activities line — the defect was live, not
+theoretical.
+
+`retrieve_activities` now returns `cost_kind` and `budget_is_per_person`, which
+is a return-type change, so the three-argument signature was dropped and the
+revoke/grant reissued. **Gate A's invariant was re-verified afterwards**: 33
+rows for no interests, one interest, every category and a bogus slug alike; 6
+owning nothing; music first.
+
+The prompt shows materials cost against materials activities only — quoting a
+venue budget would push the model away from something the place price already
+covers. Invariant 1 is untouched: retrieved data going in, and every peso still
+computed by `cost_generated_plan` coming out.
+
+**`generate-plan` is deployed at v7 and the bundle was read back and diffed
+against disk.** The CLI still has no auth, so this went through MCP.
+
+**`csv_to_sql.mjs`: `sqlBool` is now strict.** It silently coerced anything that
+was not `true` to `false`, which for `budget_is_per_person` would have halved a
+materials budget with nothing saying so. Every boolean in every seed CSV was
+already exactly `true`/`false`, so nothing changed; a typo now fails with file
+and line. `cost_kind` is validated the same way. Both were negative-tested.
+
+**Left alone, deliberately: Phase 6 actuals exclude materials.** `complete_plan`
+builds `memories.actual_spend_php_cents` from per-stop reports plus fares, and
+materials are bought at a shop that is not a stop — so a plan with materials
+reports actual spend below its own estimate, systematically. §10.5's medians
+compare `place_reports.reported_cost` against `places.price_min` **per stop**,
+so the correction loop is unaffected and the wrong figure is a display one.
+Fixing it means a new field on the Phase 6 completion sheet, which is that
+phase's file and its own call.
+
+**Gotcha:** old `plan_cache` payloads have no `lines` key and stay valid until
+`places_version()` moves, so `PlanTotals.lines` is **nullable** and
+`costBreakdownLine` falls back to the old `places · fares` summary. Deriving the
+missing lines on the device instead would be the app doing money arithmetic.
+
+**`activity_price_php_cents` is sent per stop and deliberately not parsed in
+Dart.** It was, briefly, and removing it was the right call: `stopFacts` reads
+`cafe · Poblacion · ₱60–₱120 each · 10:00–21:00`, where the "each" is
+load-bearing, and the materials figure is a **party** total. Putting the two on
+one line unqualified is the per-person/party confusion §9 exists to prevent, and
+qualifying it properly makes a dense line longer. Plan-level materials is
+unambiguous and already there. Per-stop presentation belongs to Gate D, with the
+design system open. The reasoning is in `simple_plan.dart` beside where the
+field would go, so the next session finds it before re-adding one.
+
+156 tests (up from 147), analyze clean, 30 Deno tests green. **Not verified on
+the phone** — the device pass now owes the splash, the budget sheet,
+preferences, the navigation restructure and this breakdown.
+
+## Drift is now checked, not remembered. Run this every session.
+
+```
+node supabase/check-drift.mjs
+```
+
+**Exit 0 agrees · 1 drift · 2 could not check — and 2 is not a pass.** Nat's
+call, 2026-08-19: a routine written into this file three times and never once
+followed is not a control.
+
+It compares committed migrations against `supabase_migrations.schema_migrations`
+in both directions, and the deployed Edge Function bundles against disk. Against
+the three incidents this repo has actually had:
+
+| Incident | Caught by |
+|---|---|
+| 1 — deployed `generate-plan` two versions behind disk for a fortnight | the Edge Function half. **Needs `SUPABASE_ACCESS_TOKEN`**; without it the script says UNVERIFIED and exits 2 |
+| 2 — Phase 6 filenames not matching the stamped version | local-only *and* remote-only version, in one run |
+| 3 — two Gate C migrations applied and never committed | remote-only version |
+
+**It runs itself.** A `SessionStart` hook in `.claude/settings.json` calls
+`check-drift.mjs --hook`, which emits the verdict as `additionalContext` — so
+Claude is *told* the state before doing anything, rather than having to remember
+to look. That is the difference between this and the three HANDOFF notes that
+never held. The rule is in `CLAUDE.md`; `--hook` always exits 0 and carries the
+verdict in its text, because a non-zero SessionStart hook risks interfering with
+startup and the failure needs to be *read*, not counted.
+
+If the hook does not fire — the settings watcher only picks up `.claude/` if a
+settings file existed at session start — run the script by hand. **A hook that
+did not run is not a pass.**
+
+**Why a script rather than a pre-commit hook**, which was the obvious answer:
+the session that orphaned those two migrations **never made a commit**. A
+control that only fires when you commit cannot cover the case where you did not.
+
+**The access token is session-scoped by choice.** A Supabase PAT has
+account-level access — it can delete projects — and this repo is public and has
+already had one credential caught by GitGuardian. `check-drift.mjs` reads
+`SUPABASE_ACCESS_TOKEN`, falling back to `~/.amora-drift-token`: **outside the
+repo on purpose**, where `git add -A` cannot reach it. An env var that dies with
+the shell is safest; the file exists because a control that runs only when
+someone remembers to export a variable is the habit that already failed. Never a
+gitignored file inside the repo — that is one `.gitignore` edit away from a
+public leak.
+
+`public.migration_ledger()` is what makes it work from a developer machine —
+SECURITY DEFINER, `search_path` pinned, granted to anon on purpose. It returns
+migration versions and their SQL, all of which is already public in this repo,
+and no user data. The alternative was a service-role key on a laptop.
+
+**It compares SQL, not prose.** Comments never execute, so a comment-only
+difference is counted and reported as a note rather than failing the run. That
+is not laxity — it is what stops the check crying wolf: 13 committed migrations
+already differ from what was applied in their headers alone, because
+`apply_migration` takes SQL inline and those sessions pasted the statements
+without them. A check that reports 13 false alarms is a check nobody reads.
+
+**What it found on its first run**, beyond the comment-only 13: one real
+divergence. `20260805052510` carried a `comment on function
+cost_generated_plan(...)` that was never applied. Removed from the file rather
+than applied to the database — Gate C's migration sets that comment now, so
+re-adding the old text would only have it overwritten on replay.
+
+## The audit for checks that cannot fail — 2026-08-19
+
+Prompted by the materials check reporting 60/60 while every value on both sides
+was ₱0. Nat's framing, and it is the right one: **a green check that cannot fail
+is worse than no check, because it is believed.**
+
+Every assertion that would still have passed if the thing under test returned
+nothing:
+
+| Where | The hole | Now |
+|---|---|---|
+| `verify-totals.mjs` | all five comparisons pass on 0 == 0; empty evidence printed 0/0 and exited **0** | five non-zero preconditions — plans, stops, place money, materials, fares. Unmet → **exit 2, "NOT EVIDENCE"** |
+| `generate-plan/acceptance.mjs` | a 200 carrying `{plans: []}` counted as a success; 20 empty runs would have read "20 generations, 0 refused" | an empty 200 is a failure. *Two* plans instead of three still is not — §8 calls that prompt adherence, and zero differs in kind |
+| `extract-intake/acceptance.mjs` | the leak check is "no name from this list appears"; an empty list passes trivially | refuses to run when the catalogue comes back empty |
+| `extract-intake/acceptance.mjs` | **only the negative direction was ever asserted.** An extractor returning `{}` for all 20 utterances would have printed PASS | 12 utterances now assert what they must *produce*, from the accepted 2026-08-10 values. Verified passing |
+| `ideas_test.dart` "a non-DIY activity never shows a tutorial" | `findsNothing` only — a broken `_pump` passes it | asserts the activity title renders first |
+
+**Checked and sound**, so nobody re-audits them: the nav-bar test (`hasLength(3)`
+plus three positives), the companion-type test ("My partner" asserted first),
+the ₱0-wording tests (assert the exact rendered string), the completed-plan
+affordances ("You did this"), and `plan_detail_test`'s cost summary — where the
+negative is safe because its positive twin exercises the same widget through the
+same pump. The Deno suites were already written in both directions.
+
+**The general rule, worth applying to anything new:** before trusting a green
+check, ask what it would report if the code under test did nothing at all. If
+the answer is "the same thing", it needs a precondition that the run actually
+touched something. This is the same defect as the Phase 5 RLS attacks that were
+run as the attacker, where "zero rows" meant "blocked" and "succeeded but
+invisible to me" identically. It is now in `CLAUDE.md`.
+
+### Does any accepted phase rest on a vacuous check?
+
+Nat asked directly. Every accepted criterion was re-read against the rule:
+
+| Phase | Verdict |
+|---|---|
+| **3b** | **Yes — and it is the only one.** "Zero catalogue names across 20 utterances" is satisfied by an extractor that returns nothing. The other two criteria (20/20 HTTP 200, both rephrasings cache hits) are positive and were sound |
+| 3 | No. "Zero invalid IDs" could have gone vacuous on empty plans; that gap is now closed in the harness, and the criterion was re-run on 2026-08-19 with 60 real plans |
+| 5 | No. The RLS attacks were the vacuous shape and were already re-verified as service role when written |
+| 6 | No. Same shape, same handling — every refusal was confirmed as service role afterwards |
+| 0, 1 | No. Device-observed, and their data criterion is openly unmet in the ledger |
+
+**Recommendation: do not reopen Phase 3b's acceptance.** The claim it was granted
+on — extraction never yields a place name — was *true*; it was simply
+under-evidenced, because nothing checked the other direction. That direction is
+now enforced by twelve assertions and **passes on the live model**, with values
+matching the 2026-08-10 run exactly. Reopening would re-run the same harness and
+reach the same verdict.
+
+What the episode actually costs is confidence in the *process*, not in Phase 3b,
+and the fix for that is the rule above rather than a re-acceptance ceremony.
+Recorded here so the under-evidenced period is visible instead of tidied away.
+
+## 1.3× is now testable, and it found the sheet Nat guessed at
+
+`apps/mobile/test/large_text_test.dart`. Every other widget test runs at 1.0× on
+a viewport up to 2400 logical pixels tall — taller than any phone — which is why
+none of them has ever caught an overflow and three have been found on the device
+instead. These run at **400×720 with `textScaleFactorTestValue = 1.3`**,
+deliberately smaller than the S25 Ultra, which flatters the layout (§3).
+
+**The budget sheet overflowed by 151 pixels** with a 300px keyboard up. Nat
+raised it as an untested guess — `displaySmall` in a keyboard-inset sheet — and
+it was right: `displaySmall` at 1.3× plus a two-line helper, five preset chips
+that wrap to more rows as text grows, and a button row, in a `Column` with **no
+scroll view**. Fixed with a `SingleChildScrollView`, which `complete_plan_sheet`
+already had for the same reason. The test fails without the fix.
+
+**The five-line price breakdown does not overflow** — it wraps. That one was my
+worry and it was overstated; `Text` in a `Column` gets a bounded width and soft
+wraps. Recorded so it is not re-flagged.
+
+**`retime_sheet` is the remaining unscrolled sheet.** It has no text field so no
+keyboard inset, which makes it lower risk, but it is the same shape and has no
+1.3× test. Worth one when something next touches it.
+
+**The trap to remember:** the first version of the sheet test injected the
+keyboard inset through a `MediaQuery` wrapping the whole app, which squashed the
+intake screen too and failed before ever opening the sheet. A real keyboard
+appears *because the sheet's field takes focus*, so the inset has to be raised
+on `tester.view` **after** the sheet is open, or the test measures a layout no
+user ever sees.
+
+## The (TEST) markers — audited 2026-08-19, and they are visible
+
+Nat's standing instruction: every screen demoed is against fake Bocaue places,
+and the more finished the app looks the easier that is to forget.
+
+**They are currently visible.** All 15 `places` carry `(TEST)` in `name` and
+`test-` in `slug`; all 12 `place_notes` are marked too. Since every surface that
+shows a stop renders `place.name`, the marker travels with it — the timeline,
+the leg lines, place detail, the add-stop picker and the completion sheet.
+
+Two places show no name and therefore no marker:
+
+- **A model-authored plan title** ("A cosy evening in Poblacion") carries no
+  marker. It names no place, so nothing is claimed — but a screenshot of a
+  saved-plan list is the one view where nothing says the data is fake.
+- **Map pins, at Gate D.** Numbered pins with no label would put the fakest data
+  in the app on screen with no marker on it. **Gate D must label pins or keep
+  the numbered list adjacent** — treat this as a constraint on that gate, not a
+  preference.
+
+Do not strip the markers to make a screenshot look better. They come out when
+`DESK-CHECKLIST.md` replaces the rows, and not before.
 
 ## Review pass, post-Phase-3 — what it found
 
@@ -1300,9 +1746,41 @@ inside its origin with every leg a walk and `fare_for` never called: the exact
 failure the spread section exists to prevent. The rule that fixes it is **one
 barangay with no more than 2 places, and start the acceptance run there.**
 
-**Real:** `resource_catalog` (30 rows) and `transit_fares` (15 real barangay
+**Real:** `resource_catalog` (31 rows) and `transit_fares` (15 real barangay
 routes — Poblacion, Turo, Bunlo, Lolomboy, Duhat, Wakas, Batia, plus Marilao and
-Balagtas). `activities` (16) are generic and fine.
+Balagtas). `activities` (33) are generic and fine.
+
+> **Since Gate C each activity carries `cost_kind` and `budget_is_per_person`**,
+> which decide whether its budget reaches a plan total at all and whether party
+> size multiplies it (`00-architecture.md` §9). Both are mandatory columns in
+> `activities.csv`; the importer refuses an unrecognised `cost_kind` with a
+> file and line rather than letting the check constraint fail mid-apply.
+
+> **The catalogue was re-shaped on 2026-08-18, not grown.** 18 of the 30
+> resources were required by no activity, and `retrieve_activities` filters by
+> `required_resource_ids <@ p_owned_resource_ids` — so **a resource no activity
+> requires cannot change a single result.** It only lengthened onboarding.
+>
+> 15 orphans were paired to one new activity each; `camping-gear` was retired as
+> a duplicate of `tent` (zero owners, so nothing cascaded); and two resources were
+> added because pairing revealed real gaps — `videoke-machine` and `guitar`.
+>
+> **`car` and `motorcycle` are still orphaned, deliberately.** They belong to the
+> **legs** layer, not the activities layer: someone with a car should not be
+> quoted a tricycle fare. Inventing "Sunset ride" would have paired the rows and
+> left the real modelling error in place. Making `fare_for` aware of owned
+> transport is its own change and touches money, so invariant 3 makes it a server
+> change rather than a seed one.
+>
+> Verified in both directions after applying: owning nothing returns **6**
+> activities (those requiring none), owning everything returns **33**, and owning
+> only `projector` returns **7** — exactly one unlocked. A `guitar` owner sees
+> "Learn a song together" and *not* "Videoke night", so containment is not
+> over-broad.
+>
+> **Design rule for any future pairing: require only the resource the activity is
+> impossible without.** Every listed resource must be owned, so requiring a
+> nice-to-have silently hides the activity.
 
 > ⚠️ **`transit_fares.is_per_person` is `true` on all 15 rows, and on the 9
 > tricycle rows that is an unverified default rather than a finding.** The column

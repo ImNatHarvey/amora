@@ -1,17 +1,34 @@
-slug,title,category,min_budget_php,max_budget_php,duration_minutes,required_resource_slugs,weather_dependent,is_diy,tutorial_url
-picnic-in-the-park,Picnic in the park,outdoor,0,150,120,picnic-mat,true,false,
-sunset-watching,Sunset watching,outdoor,0,0,60,,true,false,
-stargazing,Stargazing,outdoor,0,0,90,picnic-mat,true,false,
-photo-walk,Photo walk,outdoor,0,0,90,,true,false,
-jogging-together,Jogging together,fitness,0,0,45,,true,false,
-cycling-around-town,Cycling around town,fitness,0,100,120,bicycle,true,false,
-shoot-some-hoops,Shoot some hoops,fitness,0,50,90,basketball,true,false,
-diy-paper-flowers,DIY paper flowers,diy,50,150,90,colored-paper|glue-and-scissors,false,true,
-handwritten-letter,Handwritten letter,diy,0,100,45,markers-and-pens,false,true,
-scrapbook-making,Make a scrapbook together,diy,100,400,120,art-materials|printer,false,true,
-cook-a-meal-together,Cook a meal together,cooking,150,500,90,cooking-ingredients|kitchen-appliances,false,true,
-bake-something,Bake something together,cooking,200,600,120,baking-tools|kitchen-appliances,false,true,
-street-food-crawl,Street food crawl,food,50,200,90,,true,false,
-cafe-hopping,Cafe hopping,food,200,600,150,,false,false,
-board-game-night,Board game night,indoor,0,0,120,board-games,false,false,
-movie-night-at-home,Movie night at home,indoor,0,150,150,,false,false,
+slug,title,category,min_budget_php,max_budget_php,duration_minutes,required_resource_slugs,weather_dependent,is_diy,tutorial_url,cost_kind,budget_is_per_person
+picnic-in-the-park,Picnic in the park,outdoor,0,150,120,picnic-mat,true,false,,materials,true
+sunset-watching,Sunset watching,outdoor,0,0,60,,true,false,,materials,true
+stargazing,Stargazing,outdoor,0,0,90,picnic-mat,true,false,,materials,true
+photo-walk,Photo walk,outdoor,0,0,90,,true,false,,materials,true
+jogging-together,Jogging together,fitness,0,0,45,,true,false,,materials,true
+cycling-around-town,Cycling around town,fitness,0,100,120,bicycle,true,false,,materials,true
+shoot-some-hoops,Shoot some hoops,fitness,0,50,90,basketball,true,false,,materials,true
+diy-paper-flowers,DIY paper flowers,diy,50,150,90,colored-paper|glue-and-scissors,false,true,,materials,false
+handwritten-letter,Handwritten letter,diy,0,100,45,markers-and-pens,false,true,,materials,true
+scrapbook-making,Make a scrapbook together,diy,100,400,120,art-materials|printer,false,true,,materials,false
+cook-a-meal-together,Cook a meal together,cooking,150,500,90,cooking-ingredients|kitchen-appliances,false,true,,materials,false
+bake-something,Bake something together,cooking,200,600,120,baking-tools|kitchen-appliances,false,true,,materials,false
+street-food-crawl,Street food crawl,food,50,200,90,,true,false,,venue,true
+cafe-hopping,Cafe hopping,food,200,600,150,,false,false,,venue,true
+board-game-night,Board game night,indoor,0,0,120,board-games,false,false,,materials,true
+movie-night-at-home,Movie night at home,indoor,0,150,150,,false,false,,materials,true
+backyard-camping,Backyard camping,outdoor,0,100,240,tent,false,false,,materials,true
+sunset-with-seats,Sunset with proper seats,outdoor,0,0,90,folding-chairs,true,false,,materials,true
+pack-a-cooler,Pack a cooler and go,outdoor,100,300,180,cooler,true,false,,materials,true
+night-walk,Night walk,outdoor,0,0,60,flashlight,true,false,,materials,true
+grill-together,Grill something together,cooking,200,600,120,grill,false,true,,materials,false
+wrap-a-surprise,Wrap a surprise,diy,50,200,45,wrapping-paper,false,true,,materials,false
+instant-photo-hunt,Instant photo hunt,outdoor,100,300,90,instant-camera,true,false,,materials,false
+badminton-at-the-court,Badminton at the court,fitness,0,50,60,badminton-set,true,false,,materials,true
+volleyball-at-the-court,Volleyball at the court,fitness,0,50,60,volleyball,true,false,,materials,true
+work-out-together,Work out together,fitness,0,0,45,yoga-mat,false,false,,materials,true
+card-games,Card games,indoor,0,0,90,playing-cards,false,false,,materials,true
+read-together,Read together,indoor,0,0,90,books,false,false,,materials,true
+co-op-game-night,Co-op game night,indoor,0,0,120,gaming-console,false,false,,materials,true
+make-a-playlist-night,Make a playlist night,indoor,0,0,90,bluetooth-speaker,false,false,,materials,true
+outdoor-movie-night,Outdoor movie night,outdoor,0,150,150,projector,true,false,,materials,true
+videoke-night,Videoke night,music,0,150,120,videoke-machine,false,false,,materials,true
+learn-a-song-together,Learn a song together,music,0,0,90,guitar,false,true,,materials,true
