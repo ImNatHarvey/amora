@@ -408,7 +408,14 @@ on conflict (slug) do update set
   );
 }
 
-const VERIFIED_METHODS = ['visited', 'phoned', 'resident'];
+const VERIFIED_METHODS = ['visited', 'phoned', 'resident', 'generated'];
+
+// Demo rows are generated, carry no verification of any kind, and are removed with
+// `delete from public.places where verified_method = 'generated'`. That command is
+// only as trustworthy as the pairing below, so the pairing is checked rather than
+// remembered: a generated row must carry a demo- slug, and a demo- slug must
+// declare itself generated. See supabase/seed/DEMO-DATA.md.
+const DEMO_SLUG_PREFIX = 'demo-';
 
 /**
  * §10.4a, made mechanical.
@@ -447,6 +454,33 @@ function assertVerifiedMethods(rows) {
           'not one of them.\n' +
           '  Either phone the place and record what they say, or drop the price ' +
           'to 0 if it is genuinely free.',
+      );
+    }
+
+    // The demo wipe is `delete ... where verified_method = 'generated'`. Both
+    // halves of this pairing keep that command exact: a generated row that lost
+    // its prefix would be invisible to a slug-based sweep, and a demo- row that
+    // lost its method would survive the wipe and sit in the catalogue looking
+    // curated. Neither is recoverable by reading the table afterwards.
+    const isDemoSlug = r.slug.startsWith(DEMO_SLUG_PREFIX);
+
+    if (method === 'generated' && !isDemoSlug) {
+      throw new Error(
+        `${where} — '${r.slug}' is verified_method "generated" but its slug does ` +
+          `not start with "${DEMO_SLUG_PREFIX}".
+` +
+          '  Generated rows are demo data and must be removable by slug as well ' +
+          'as by method (supabase/seed/DEMO-DATA.md).',
+      );
+    }
+
+    if (isDemoSlug && method !== 'generated') {
+      throw new Error(
+        `${where} — '${r.slug}' carries the "${DEMO_SLUG_PREFIX}" prefix but its ` +
+          `verified_method is "${method || '(blank)'}".
+` +
+          '  A demo slug must declare itself generated, or the wipe leaves it ' +
+          'behind looking like curated data.',
       );
     }
   }

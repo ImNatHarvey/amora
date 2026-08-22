@@ -107,11 +107,11 @@ a phase.**
 
 | Phase | Criterion not yet met | Unblocked by |
 |---|---|---|
-| 0 | ≥8 places across ≥3 barangays; all 15 rows are `test-*` | `DESK-CHECKLIST.md` |
-| 2 | "real, currently-open places within 5 km", the ₱0 run and the ₱100–₱200 run | the same 8 places |
+| 0 | ≥8 places across ≥3 barangays. **Still open.** The 15 rows are now `demo-*` across 11 barangays, but they are `verified_method = 'generated'` — invented, not established. The criterion asks for verified places | `DESK-CHECKLIST.md` |
+| 2 | "real, currently-open places within 5 km", the ₱0 run and the ₱100–₱200 run. **Still open.** The runs now execute and return plans, but on generated rows, so they test the pipeline and not the question | the same 8 places |
 | ~~3~~ | ~~20 generations with zero invalid IDs; cache hit~~ | **MET 2026-08-12** — 20/20, zero refused, cache hit confirmed |
 | ~~3~~ | ~~every total matches an independent SQL recomputation~~ | **MET 2026-08-12** — 58/58 plans, `verify-totals.mjs` |
-| 4 | whether the *map* is useful | real coordinates; 15 invented ones draw a cluster and 72 m legs |
+| 4 | whether the *map* is useful | **partly unblocked.** The demo coordinates span 11 barangays and 3 km, so the *layout* can now be judged on the device; whether the map is useful about real places still needs real ones |
 | 4 | "a DIY activity plays its tutorial in-app" | one real `tutorial_url` — the **code is done**, see below |
 | 4 | on-device confirmation of the Phase 4 UI | Nat's phone was in use on 2026-08-08 |
 | 5 | on-device confirmation of drag-to-reorder | same phone. Both *written* criteria are met; this is the extra check §3 requires of every phase |
@@ -1658,11 +1658,20 @@ not dead — `plans` and `plan_items` sit at **zero rows** between test runs, an
 Postgres will not choose an index on a 15-row table, so "never used" measures the
 dataset, not the schema. Re-check once real data and real traffic exist.
 
-## Seed data — placeholders, must be replaced
+## Seed data — generated demo rows, must be replaced
 
-All 15 rows in `places` are `test-*` / `(TEST)` stand-ins with invented
-coordinates, prices and hours. `place_notes` likewise. They exist to prove the
-import pipeline, nothing more.
+**All 15 rows in `places` are `demo-*`, `verified_method = 'generated'`:
+invented prices, invented hours, established by nobody.** They replaced the
+`test-*` stand-ins on 2026-08-22 so the app could be used on a phone before the
+desk run happened. They are spread across 11 barangays with plausible names and
+real coordinates, which is what makes them useful — and what makes them
+dangerous, because they no longer *look* like placeholders.
+
+**Read `supabase/seed/DEMO-DATA.md` before touching them.** It carries the
+honesty guards, the derivation, and the one-command wipe
+(`supabase/seed/wipe-demo.sql`). Some rows are real, named businesses with
+invented prices; that is permissible only while this build stays on Nat's phone.
+If an APK reaches anyone else, wipe first — that is the coverage gate below.
 
 **Replacing them is now a desk job.** Target 8 across at least 3 barangays: layer 1
 is the free public layer — plazas, parks, riverside, church grounds, covered courts,
