@@ -69,6 +69,10 @@ flutter:
 
   assets:
     - .env
+    # Listed file by file rather than as a directory, so the README beside
+    # them does not ship inside the APK.
+    - assets/brand/logo.png
+    - assets/brand/mascot.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

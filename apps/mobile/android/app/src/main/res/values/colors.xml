@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The seed colour the whole ColorScheme is generated from
+         (docs/02-design-system.md §2). Kept literal here because Android
+         resources cannot read Dart. -->
+    <color name="ic_launcher_background">#B4436C</color>
+</resources>
