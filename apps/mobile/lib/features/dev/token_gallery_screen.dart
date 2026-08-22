@@ -221,7 +221,7 @@ class _CostRow extends StatelessWidget {
         children: [
           Expanded(child: Text(label, style: theme.textTheme.bodyLarge)),
           if (icon != null) ...[
-            Icon(icon, size: 18, color: color),
+            Icon(icon, size: tokens.iconInline, color: color),
             SizedBox(width: tokens.xs),
           ],
           Text(

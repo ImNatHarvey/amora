@@ -168,6 +168,74 @@ void main() {
         findsOneWidget,
       );
     });
+
+    /// The summary at [totalPhpCents], against a budget of ₱600.
+    ///
+    /// Pumped twice with different totals, because AnimatedSwitcher does not
+    /// animate its first child — and the real moment this fires is an edit
+    /// pushing an already-visible plan over, not a screen opening over.
+    Future<void> pumpTotal(
+      WidgetTester tester,
+      int totalPhpCents, {
+      required bool disableAnimations,
+    }) => tester.pumpWidget(
+          MediaQuery(
+            data: MediaQueryData(disableAnimations: disableAnimations),
+            child: MaterialApp(
+              theme: AppTheme.light,
+              home: Scaffold(
+                body: PlanCostSummary(
+                  totals: PlanTotals(
+                    placesPhpCents: totalPhpCents,
+                    faresPhpCents: 0,
+                    totalPhpCents: totalPhpCents,
+                    unpricedLegs: 0,
+                    isComplete: true,
+                  ),
+                  budgetPhpCents: 60000,
+                ),
+              ),
+            ),
+          ),
+        );
+
+    // Both directions, for the reason the splash test gives: "renders at once"
+    // passes against a build that never animates, and "grows from nothing"
+    // passes against one that ignores the accessibility setting. Neither half
+    // is worth anything alone.
+
+    testWidgets('grows in when an edit pushes the plan over', (tester) async {
+      await pumpTotal(tester, 12000, disableAnimations: false);
+      expect(find.textContaining('Over your budget'), findsNothing);
+
+      await pumpTotal(tester, 80000, disableAnimations: false);
+      await tester.pump();
+
+      // Mid-transition: in the tree, not yet at full height.
+      final growing =
+          tester.getSize(find.byType(PlanCostSummary)).height;
+
+      await tester.pumpAndSettle();
+      final settled =
+          tester.getSize(find.byType(PlanCostSummary)).height;
+
+      expect(settled, greaterThan(0));
+      expect(growing, lessThan(settled));
+    });
+
+    testWidgets('reduced motion renders the end state at once', (tester) async {
+      // §6: the end state immediately — not a shorter animation, not a blank
+      // space. One pump, no settling.
+      await pumpTotal(tester, 12000, disableAnimations: true);
+      await pumpTotal(tester, 80000, disableAnimations: true);
+      await tester.pump();
+
+      expect(find.textContaining('Over your budget of ₱600'), findsOneWidget);
+      expect(
+        tester.getSize(find.byType(PlanCostSummary)).height,
+        greaterThan(0),
+      );
+    });
   });
 
   test('a leg reports itself as a list of segments', () {

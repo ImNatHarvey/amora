@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/router.dart';
 import '../../theme/app_tokens.dart';
 import 'plan_providers.dart';
+import '../../ui/button_spinner.dart';
 
 /// Saves a plan and opens it.
 ///
@@ -53,10 +54,7 @@ class SavePlanButton extends ConsumerWidget {
                 }
               },
         child: saving.isLoading
-            ? const SizedBox.square(
-                dimension: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
+            ? const ButtonSpinner()
             : const Text('Save this plan'),
       ),
     );

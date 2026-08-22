@@ -6,6 +6,20 @@ don't say. Last updated for the Gate C commit.
 
 ## Where we are
 
+> **2026-08-22 — the app is installable and there is a build on the phone's
+> terms.** Demo seed data (15 generated places, 11 barangays, 66 fares), Gate D
+> finished, a visual pass, branding placeholders, and the app name and icon.
+> **The next action is `docs/DEVICE-RUN.md`** — connect, install, and walk the
+> checklist once in light, once in dark, once at 1.3×.
+>
+> **The data is generated and Phase 0 and Phase 2 stay open.** Every price and
+> opening time in the catalogue is invented; `verified_method = 'generated'`
+> records that, and `supabase/seed/wipe-demo.sql` removes all of it in one
+> command. Read `supabase/seed/DEMO-DATA.md` before touching the rows — some
+> are real, named businesses, which is only permissible while the build stays on
+> one phone.
+
+
 **Every phase of the MVP is now built.** Phase 6 was the last one, and there is
 no more code to write before the app is usable end to end. What stands between
 here and a shippable MVP is **data and a phone**, not development.
@@ -107,11 +121,11 @@ a phase.**
 
 | Phase | Criterion not yet met | Unblocked by |
 |---|---|---|
-| 0 | ≥8 places across ≥3 barangays; all 15 rows are `test-*` | `DESK-CHECKLIST.md` |
-| 2 | "real, currently-open places within 5 km", the ₱0 run and the ₱100–₱200 run | the same 8 places |
+| 0 | ≥8 places across ≥3 barangays. **Still open.** The 15 rows are now `demo-*` across 11 barangays, but they are `verified_method = 'generated'` — invented, not established. The criterion asks for verified places | `DESK-CHECKLIST.md` |
+| 2 | "real, currently-open places within 5 km", the ₱0 run and the ₱100–₱200 run. **Still open.** The runs now execute and return plans, but on generated rows, so they test the pipeline and not the question | the same 8 places |
 | ~~3~~ | ~~20 generations with zero invalid IDs; cache hit~~ | **MET 2026-08-12** — 20/20, zero refused, cache hit confirmed |
 | ~~3~~ | ~~every total matches an independent SQL recomputation~~ | **MET 2026-08-12** — 58/58 plans, `verify-totals.mjs` |
-| 4 | whether the *map* is useful | real coordinates; 15 invented ones draw a cluster and 72 m legs |
+| 4 | whether the *map* is useful | **partly unblocked.** The demo coordinates span 11 barangays and 3 km, so the *layout* can now be judged on the device; whether the map is useful about real places still needs real ones |
 | 4 | "a DIY activity plays its tutorial in-app" | one real `tutorial_url` — the **code is done**, see below |
 | 4 | on-device confirmation of the Phase 4 UI | Nat's phone was in use on 2026-08-08 |
 | 5 | on-device confirmation of drag-to-reorder | same phone. Both *written* criteria are met; this is the extra check §3 requires of every phase |
@@ -1558,46 +1572,12 @@ budget and radius, takes the 3 nearest it can afford, and costs every leg. Only
 ## Test device
 
 Samsung Galaxy S25 Ultra (SM-S938B), Android 16 / API 36, over **wireless
-debugging** — the USB cable is charge-only. Stable id:
-`adb-R5CY224851B-4mLefi._adb-tls-connect._tcp` (use the mDNS form; the IP-and-port
-form changes on reboot).
+debugging** — the USB cable is charge-only. The emulator is abandoned; do not
+suggest it (`00-architecture.md` §3).
 
-**The emulator is abandoned** — unstable across several sessions. Do not suggest
-it. Full rationale and the flagship-flatters-us caveat: `00-architecture.md` §3.
-
-### Getting wireless debugging back after a reboot
-
-Samsung turns **Wireless debugging off on every reboot**, so this is a recurring
-chore, not a fault. Work down the list; stop as soon as `flutter devices` sees
-the phone.
-
-1. **Phone:** Settings → Developer options → **Wireless debugging → ON**.
-2. **Same Wi-Fi, and not a guest network.** Client isolation (common on guest
-   SSIDs and some mesh setups) blocks both mDNS and the direct connection, and
-   looks exactly like the phone being off.
-3. **Try the saved name first:**
-   `adb connect adb-R5CY224851B-4mLefi._adb-tls-connect._tcp`
-4. **If that prints `cannot resolve host` — re-pair from scratch.** The name only
-   resolves while the phone is advertising it over mDNS, and the pairing is
-   dropped by a factory-level toggle or an OS update.
-   - Phone: Wireless debugging → **Pair device with pairing code**. It shows an
-     `IP:PORT` *and* a six-digit code. This port is **not** the same as the one
-     on the main Wireless debugging screen.
-   - `adb pair <ip>:<pairing-port>` — paste the code when prompted.
-   - `adb connect <ip>:<connect-port>` — the port from the **main** screen.
-5. **If mDNS is the specific problem** (pairing works, the name never resolves):
-   - `adb mdns check` reports whether the discovery backend is running at all.
-   - `adb mdns services` lists what it can currently see.
-   - `adb kill-server && adb start-server`, then retry step 3.
-   - Still dead: **use the `IP:PORT` form and move on.** It works identically;
-     it just changes on reboot, which is the only reason the mDNS name is
-     preferred. Do not spend a session fixing mDNS.
-6. **"more than one device"** — two connections to the same phone.
-   `adb devices` then `adb disconnect <the stale one>`.
-7. Confirm with `flutter devices`, then `flutter run`.
-
-If the phone appears in `adb devices` as `unauthorized`, the trust prompt is
-waiting on the phone screen — unlock it and accept.
+**The pairing ladder, the build commands, the one-pass checklist and the list of
+what is expected to break now live in `docs/DEVICE-RUN.md`.** They are
+procedure, not context, and they were the longest thing in this file.
 
 ## Hard rules
 
@@ -1658,11 +1638,20 @@ not dead — `plans` and `plan_items` sit at **zero rows** between test runs, an
 Postgres will not choose an index on a 15-row table, so "never used" measures the
 dataset, not the schema. Re-check once real data and real traffic exist.
 
-## Seed data — placeholders, must be replaced
+## Seed data — generated demo rows, must be replaced
 
-All 15 rows in `places` are `test-*` / `(TEST)` stand-ins with invented
-coordinates, prices and hours. `place_notes` likewise. They exist to prove the
-import pipeline, nothing more.
+**All 15 rows in `places` are `demo-*`, `verified_method = 'generated'`:
+invented prices, invented hours, established by nobody.** They replaced the
+`test-*` stand-ins on 2026-08-22 so the app could be used on a phone before the
+desk run happened. They are spread across 11 barangays with plausible names and
+real coordinates, which is what makes them useful — and what makes them
+dangerous, because they no longer *look* like placeholders.
+
+**Read `supabase/seed/DEMO-DATA.md` before touching them.** It carries the
+honesty guards, the derivation, and the one-command wipe
+(`supabase/seed/wipe-demo.sql`). Some rows are real, named businesses with
+invented prices; that is permissible only while this build stays on Nat's phone.
+If an APK reaches anyone else, wipe first — that is the coverage gate below.
 
 **Replacing them is now a desk job.** Target 8 across at least 3 barangays: layer 1
 is the free public layer — plazas, parks, riverside, church grounds, covered courts,

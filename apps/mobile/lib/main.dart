@@ -53,6 +53,9 @@ class _RoutedApp extends ConsumerWidget {
 
     return MaterialApp.router(
       title: 'Amora',
+      // Nat is holding this build to look at it, not to debug it, and the
+      // banner sits exactly where the app bar's actions are.
+      debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
@@ -72,6 +75,9 @@ class _Shell extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Amora',
+      // Nat is holding this build to look at it, not to debug it, and the
+      // banner sits exactly where the app bar's actions are.
+      debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/supabase_client_provider.dart';
 import '../theme/app_tokens.dart';
+import '../theme/brand_mark.dart';
 
 /// The one-time work the app must finish before any screen can talk to Supabase.
 ///
@@ -110,7 +111,7 @@ class _StartupSplashState extends State<StartupSplash>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const _MascotPlaceholder(),
+                  const BrandMark(art: BrandArt.mascot, size: 96),
                   SizedBox(height: tokens.md),
                   Text('Amora', style: theme.textTheme.headlineSmall),
                 ],
@@ -122,35 +123,6 @@ class _StartupSplashState extends State<StartupSplash>
             const CircularProgressIndicator(),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Stands in for the mascot until the art lands.
-///
-/// Kept as its own widget so swapping it is one file and one class, and kept
-/// obviously generic so nobody mistakes it for the final mark. Sized from
-/// [AmoraTokens] rather than a literal, and it scales with the icon theme, so
-/// it survives 1.3× font scale without a second layout pass.
-class _MascotPlaceholder extends StatelessWidget {
-  const _MascotPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final tokens = theme.tokens;
-
-    return Container(
-      padding: EdgeInsets.all(tokens.md),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(
-        Icons.favorite_rounded,
-        size: tokens.xxl,
-        color: theme.colorScheme.onPrimaryContainer,
       ),
     );
   }

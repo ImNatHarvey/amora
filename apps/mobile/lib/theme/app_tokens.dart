@@ -31,6 +31,9 @@ class AmoraTokens extends ThemeExtension<AmoraTokens> {
     required this.radiusSmall,
     required this.radiusMedium,
     required this.radiusLarge,
+    required this.iconInline,
+    required this.iconStandard,
+    required this.iconLarge,
     required this.costFree,
     required this.costNormal,
     required this.costOverBudget,
@@ -54,6 +57,9 @@ class AmoraTokens extends ThemeExtension<AmoraTokens> {
       radiusSmall: 8,
       radiusMedium: 12,
       radiusLarge: 20,
+      iconInline: 18,
+      iconStandard: 24,
+      iconLarge: 40,
       // Free is good news, so it gets an accent role and is never muted.
       costFree: colorScheme.tertiary,
       costNormal: colorScheme.onSurface,
@@ -96,6 +102,29 @@ class AmoraTokens extends ThemeExtension<AmoraTokens> {
   /// 20 — bottom sheets, dialogs.
   final double radiusLarge;
 
+  // --- Icon sizes (design system §5) ----------------------------------------
+  // One family, one set of sizes. Before these existed the same inline-with-text
+  // role was drawn at 16 in two places and 18 in four, which is the kind of
+  // difference nobody can name but everybody can see.
+  //
+  // Sizes are logical pixels and are deliberately NOT scaled by the text scaler
+  // here: an Icon inside a Text row already inherits IconTheme, and Flutter
+  // scales icons with the text scale factor on its own. Multiplying twice makes
+  // a 1.3x screen look broken.
+
+  /// 18 — an icon sitting inside a line of text, such as a chip's leading glyph
+  /// or the clock beside a stop's time.
+  final double iconInline;
+
+  /// 24 — Material's default. App bar actions, list tile leading icons,
+  /// navigation destinations. Left explicit so a call site that needs the
+  /// default can say so rather than omitting the parameter and hoping.
+  final double iconStandard;
+
+  /// 40 — an icon standing in for an image, such as a place with no photo.
+  /// Large enough to read as deliberate rather than as a broken asset.
+  final double iconLarge;
+
   // --- Budget colour semantics (design system §2) ---------------------------
   // Money means the same thing everywhere in the app. Partner and sponsored
   // places get no colour treatment at all — a small text label only — so they
@@ -136,6 +165,9 @@ class AmoraTokens extends ThemeExtension<AmoraTokens> {
     double? radiusSmall,
     double? radiusMedium,
     double? radiusLarge,
+    double? iconInline,
+    double? iconStandard,
+    double? iconLarge,
     Color? costFree,
     Color? costNormal,
     Color? costOverBudget,
@@ -151,6 +183,9 @@ class AmoraTokens extends ThemeExtension<AmoraTokens> {
       radiusSmall: radiusSmall ?? this.radiusSmall,
       radiusMedium: radiusMedium ?? this.radiusMedium,
       radiusLarge: radiusLarge ?? this.radiusLarge,
+      iconInline: iconInline ?? this.iconInline,
+      iconStandard: iconStandard ?? this.iconStandard,
+      iconLarge: iconLarge ?? this.iconLarge,
       costFree: costFree ?? this.costFree,
       costNormal: costNormal ?? this.costNormal,
       costOverBudget: costOverBudget ?? this.costOverBudget,
@@ -173,6 +208,9 @@ class AmoraTokens extends ThemeExtension<AmoraTokens> {
       radiusSmall: lerpDouble(radiusSmall, other.radiusSmall, t)!,
       radiusMedium: lerpDouble(radiusMedium, other.radiusMedium, t)!,
       radiusLarge: lerpDouble(radiusLarge, other.radiusLarge, t)!,
+      iconInline: lerpDouble(iconInline, other.iconInline, t)!,
+      iconStandard: lerpDouble(iconStandard, other.iconStandard, t)!,
+      iconLarge: lerpDouble(iconLarge, other.iconLarge, t)!,
       costFree: Color.lerp(costFree, other.costFree, t)!,
       costNormal: Color.lerp(costNormal, other.costNormal, t)!,
       costOverBudget: Color.lerp(costOverBudget, other.costOverBudget, t)!,

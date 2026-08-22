@@ -299,28 +299,48 @@ class PlanCostSummary extends StatelessWidget {
     final tokens = theme.tokens;
     final overBudget = totals.totalPhpCents > budgetPhpCents;
 
-    if (!overBudget) return const SizedBox.shrink();
-
-    return Padding(
-      padding: EdgeInsets.only(top: tokens.sm),
-      child: Row(
-        children: [
-          Icon(
-            tokens.costOverBudgetIcon,
-            size: 18,
-            color: tokens.costOverBudget,
-          ),
-          SizedBox(width: tokens.xs),
-          Expanded(
-            child: Text(
-              'Over your budget of '
-              '${pesos(budgetPhpCents, zeroIsFree: false)}.',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: tokens.costOverBudget),
-            ),
-          ),
-        ],
+    // §6 sanctions animating "a total recalculating", and this is that moment:
+    // the warning appears because an edit you just made pushed the plan over.
+    // Snapping in reads as though it had always been there. Sliding it in says
+    // the edit did it.
+    //
+    // Reduced motion renders the end state immediately, per §6 — a zero
+    // duration, not a shorter one and not a blank space.
+    return AnimatedSwitcher(
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 200),
+      transitionBuilder: (child, animation) => SizeTransition(
+        sizeFactor: animation,
+        // Grows downward from the timeline rather than from its own middle, so
+        // nothing above it moves.
+        alignment: Alignment.topCenter,
+        child: FadeTransition(opacity: animation, child: child),
       ),
+      child: !overBudget
+          ? const SizedBox.shrink(key: ValueKey('within-budget'))
+          : Padding(
+              key: const ValueKey('over-budget'),
+              padding: EdgeInsets.only(top: tokens.sm),
+              child: Row(
+                children: [
+                  Icon(
+                    tokens.costOverBudgetIcon,
+                    size: tokens.iconInline,
+                    color: tokens.costOverBudget,
+                  ),
+                  SizedBox(width: tokens.xs),
+                  Expanded(
+                    child: Text(
+                      'Over your budget of '
+                      '${pesos(budgetPhpCents, zeroIsFree: false)}.',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: tokens.costOverBudget),
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }

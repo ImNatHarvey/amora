@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/repository_exception.dart';
 import '../../theme/app_tokens.dart';
+import '../../ui/button_spinner.dart';
 
 /// The email and password form shared by sign in and sign up.
 ///
@@ -116,10 +117,7 @@ class _AuthFormState extends State<AuthForm> {
           FilledButton(
             onPressed: _submitting ? null : _submit,
             child: _submitting
-                ? const SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                ? const ButtonSpinner()
                 : Text(widget.submitLabel),
           ),
         ],

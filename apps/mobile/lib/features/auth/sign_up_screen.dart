@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/router.dart';
 import '../../data/auth_repository.dart';
 import '../../theme/app_tokens.dart';
+import '../../theme/brand_mark.dart';
 import 'auth_form.dart';
 
 class SignUpScreen extends ConsumerWidget {
@@ -21,6 +22,8 @@ class SignUpScreen extends ConsumerWidget {
           padding: EdgeInsets.all(tokens.md),
           children: [
             SizedBox(height: tokens.xxl),
+            const BrandMark(art: BrandArt.logo, size: 64),
+            SizedBox(height: tokens.lg),
             Text('Create your account', style: theme.textTheme.headlineSmall),
             SizedBox(height: tokens.sm),
             Text(

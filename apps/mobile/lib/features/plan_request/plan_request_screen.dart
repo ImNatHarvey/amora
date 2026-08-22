@@ -11,6 +11,7 @@ import '../plan/save_plan_button.dart';
 import 'generated_plan_view.dart';
 import 'plan_parts.dart';
 import 'plan_request_providers.dart';
+import '../../ui/button_spinner.dart';
 
 /// Phase 2's verification surface: budget in, costed plan out.
 ///
@@ -198,10 +199,7 @@ class _PlanRequestScreenState extends ConsumerState<PlanRequestScreen> {
                         _submit();
                       },
                 child: result.isLoading
-                    ? const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const ButtonSpinner()
                     : const Text('Build a plan'),
               ),
               SizedBox(height: tokens.sm),
@@ -217,10 +215,7 @@ class _PlanRequestScreenState extends ConsumerState<PlanRequestScreen> {
                         _generate();
                       },
                 child: generated.isLoading
-                    ? const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const ButtonSpinner()
                     : const Text('Generate with AI'),
               ),
               SizedBox(height: tokens.lg),

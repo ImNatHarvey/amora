@@ -1,16 +1,16 @@
 slug,name,category,lat,lng,address,barangay,city,opening_hours,price_min_php,price_max_php,indoor,sunset_facing,social_url,contact_number,notes,verified_on,verified_method
-test-riverside-park,Riverside Park (TEST),park,14.7981,120.9247,Riverside Rd,Poblacion,Bocaue,mon-sun 05:00-21:00,0,0,false,true,,,PLACEHOLDER - replace with verified data,,
-test-town-plaza,Town Plaza (TEST),plaza,14.7967,120.9261,Plaza Area,Poblacion,Bocaue,mon-sun 24h,0,0,false,false,,,PLACEHOLDER - replace with verified data,,
-test-sunset-bridge,Sunset Bridge View (TEST),viewpoint,14.8014,120.9198,Bridge Approach,Turo,Bocaue,mon-sun 24h,0,0,false,true,,,PLACEHOLDER - replace with verified data,,
-test-barangay-court,Barangay Court (TEST),sports,14.7938,120.9302,Court Area,Bunlo,Bocaue,mon-sun 06:00-22:00,0,0,false,false,,,PLACEHOLDER - replace with verified data,,
-test-church-grounds,Church Grounds (TEST),landmark,14.7972,120.9256,Church St,Poblacion,Bocaue,mon-sun 05:00-20:00,0,0,false,false,,,PLACEHOLDER - replace with verified data,,
-test-milk-tea-corner,Milk Tea Corner (TEST),cafe,14.7955,120.9273,Main Rd,Poblacion,Bocaue,mon-sun 10:00-21:00,60,120,true,false,,,PLACEHOLDER - replace with verified data,,
-test-street-food-row,Street Food Row (TEST),food,14.7949,120.9288,Market Side,Poblacion,Bocaue,mon-sun 16:00-23:00,25,100,false,false,,,PLACEHOLDER - replace with verified data,,
-test-carinderia-one,Carinderia One (TEST),food,14.7991,120.9221,Side St,Turo,Bocaue,mon-sat 06:00-19:00,50,120,true,false,,,PLACEHOLDER - replace with verified data,,
-test-public-market,Public Market (TEST),market,14.7944,120.9294,Market Rd,Poblacion,Bocaue,mon-sun 05:00-18:00,30,150,true,false,,,PLACEHOLDER - replace with verified data,,
-test-bakery-stop,Bakery Stop (TEST),food,14.8003,120.9235,Corner Lot,Turo,Bocaue,mon-sun 06:00-20:00,20,100,true,false,,,PLACEHOLDER - replace with verified data,,
-test-corner-cafe,Corner Cafe (TEST),cafe,14.7976,120.9269,Main Rd,Poblacion,Bocaue,mon-fri 09:00-22:00; sat-sun 08:00-23:00,150,350,true,false,,,PLACEHOLDER - replace with verified data,,
-test-casual-diner,Casual Diner (TEST),restaurant,14.7929,120.9311,Highway Side,Bunlo,Bocaue,mon-sun 10:00-22:00,200,400,true,false,,,PLACEHOLDER - replace with verified data,,
-test-dessert-bar,Dessert Bar (TEST),cafe,14.8019,120.9184,Second Floor,Lolomboy,Bocaue,tue-sun 13:00-22:00,180,320,true,false,,,PLACEHOLDER - replace with verified data,,
-test-flower-shop,Flower Shop (TEST),florist,14.7962,120.9279,Market Row,Poblacion,Bocaue,mon-sat 08:00-18:00,300,1500,true,false,,,PLACEHOLDER - replace with verified data,,
-test-gift-shop,Gift Shop (TEST),vendor,14.7985,120.9241,Main Rd,Poblacion,Bocaue,mon-sun 09:00-20:00,150,800,true,false,,,PLACEHOLDER - replace with verified data,,
+demo-kim-taegon-shrine,St. Andrew Kim Taegon Shrine,landmark,14.789200,120.932000,Lolomboy,Lolomboy,Bocaue,tue-sun 10:00-17:00,0,0,false,false,,,"Peaceful and photogenic. Korean architecture, and quiet enough to talk.",,generated
+demo-victoria-city-garden,Victoria City Garden & Animal World,park,14.802300,120.950700,Igulot,Igulot,Bocaue,mon-sun 08:00-20:00,125,200,false,true,,,"Playful and interactive. Good for a sunset walk once the heat drops.",,generated
+demo-krus-sa-wawa,Krus sa Wawa & St. Martin of Tours Parish,landmark,14.801500,120.930400,Poblacion,Poblacion,Bocaue,mon-sun 06:00-19:00,0,0,false,false,,,"Historic and central. The grounds are open air and cost nothing to sit in.",,generated
+demo-arena-grounds,Philippine Arena Stadium Grounds,sports,14.793600,120.950200,Wakas,Wakas,Bocaue,mon-sun 05:00-21:00,0,0,false,true,,,"Grand and open air. Walk the perimeter; it is free and the light is good late.",,generated
+demo-stevia-farm,The Stevia Farm,cafe,14.811500,120.941200,Tambobong,Tambobong,Bocaue,mon-sat 08:00-17:00,100,180,false,false,,,"Green and unhurried. Closes before dinner, so this is a daytime stop.",,generated
+demo-riverwalk-promenade,Bocaue Riverwalk Promenade,park,14.798500,120.928800,Bambang,Bambang,Bocaue,mon-sun 24h,0,0,false,true,,,"Riverside and breezy. Best around 17:30 when the light comes off the water.",,generated
+demo-turo-fireworks-hub,Turo Fireworks Hub,vendor,14.805500,120.942500,Turo,Turo,Bocaue,mon-sun 09:00-20:00,250,400,true,false,,,"Bright and festive. This is what the town is known for; go for the sparklers.",,generated
+demo-cafe-galilea,Cafe Galilea,cafe,14.790100,120.931000,Lolomboy,Lolomboy,Bocaue,mon-sun 11:00-22:00,175,280,true,false,,,"Cosy and aesthetic. Open late enough to be an after-dinner stop.",,generated
+demo-kape-at-kultura,Kape at Kultura,cafe,14.802100,120.931500,Poblacion,Poblacion,Bocaue,mon-sun 07:00-21:00,125,200,true,false,,,"Warm and heritage-leaning. Opens early, so it works as a first stop.",,generated
+demo-turo-night-food-park,Turo Night Food Park,food,14.807500,120.941000,Turo,Turo,Bocaue,mon-sun 17:00-23:30,75,150,false,false,,,"Bustling and casual. Evenings only, and cheap enough to graze across stalls.",,generated
+demo-estero-binang-eats,Estero de Biñang Eats,restaurant,14.799500,120.935500,Biñang 2nd,Biñang 2nd,Bocaue,mon-sun 10:00-21:00,200,320,true,false,,,"Comfort food, rustic room, friendly service.",,generated
+demo-la-casa-art-coffee,La Casa Art & Coffee,cafe,14.796000,120.938000,Bunlo,Bunlo,Bocaue,wed-sun 13:00-21:00,300,450,true,false,,,"Creative and hands-on. Pottery and coffee; closed Monday and Tuesday.",,generated
+demo-ciudad-dining-room,Ciudad Dining Room,restaurant,14.801000,120.951500,Igulot,Igulot,Bocaue,tue-sun 17:00-23:00,600,900,true,false,,,"Elegant and upscale. This is the anniversary room, not the weeknight one.",,generated
+demo-el-manzano,El Manzano Ancestral Home,restaurant,14.806000,120.933500,Antipona,Antipona,Bocaue,fri-sun 16:00-22:00,400,650,true,false,,,"Vintage and intimate. Weekends only, and the house itself is half the visit.",,generated
+demo-ligo-ligo-retreat,Ligo-Ligo Riverside Retreat,park,14.814000,120.945000,Taal,Taal,Bocaue,mon-sun 09:00-18:00,750,1000,false,true,,,"Private and tropical. Furthest out of the set, so budget for the trike.",,generated

@@ -154,7 +154,9 @@ class PlanDetailScreen extends ConsumerWidget {
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
                 SizedBox(height: tokens.md),
-                PlanMap(plan: plan),
+                // Pins stop being draggable once the plan is done, like
+                // every other edit affordance on this screen.
+                PlanMap(plan: plan, adjustable: !done),
                 SizedBox(height: tokens.md),
                 PlanTimeline(
                   plan: plan,
