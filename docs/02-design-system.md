@@ -531,11 +531,33 @@ multi-select, `ChoiceChip` for the single-selects, selected state carried by fil
 and check rather than by colour alone. Re-tapping a selected `ChoiceChip` clears
 it, because every answer here has to be un-answerable.
 
-### 10.3 Map above the timeline
+### 10.3 Map above the timeline — BUILT 2026-08-22
 
-Blocked on: real coordinates. All 15 `places` rows are `test-*` with invented,
-clustered coordinates — a map of them draws one blob with 72 m legs, so the
-layout cannot be judged, let alone accepted.
+Was blocked on coordinates that spread. The demo rows supply them — 11 barangays
+across about 3 km — so the layout is now judgeable. **Whether the map is useful
+about real places still needs real places**; that half of Phase 4's criterion
+stays open in the ledger.
+
+**A pin is picked up with a long press, not a drag.** A pan recogniser on the
+marker loses the gesture arena to the map's own drag, so the pin never moved at
+all. The long press wins it outright and is the better gesture anyway: panning
+the map with a finger that happens to land on a marker must not take the marker
+with it.
+
+**A stop with no place attached is still specified and still not built.** It is
+not representable: `PlanStop.place` is non-nullable and `Place.lat`/`lng` are
+required doubles, so there is no value the map could receive that means "no
+pin". Building the rendering anyway would add a branch nothing can reach, which
+is the same defect as a check that cannot fail. Making it real means
+`PlanStop.place` becomes nullable, which touches `read_plan`,
+`write_plan_stops`, both composers and the costing path — a schema change §10.3
+does not ask for. The rules below stand as the spec for when it is.
+
+**Found while testing, and it was live:** `CameraFit.coordinates` asserts
+`zoom.isFinite` on zero-area bounds, so a one-stop plan with no origin took the
+screen down. Phase 5 lets a user delete their way to one stop, and every payload
+saved before origin coordinates were kept has no origin. The map now centres on
+the single point instead.
 
 - Map sits **above** the stop list, not behind it and not on a separate tab.
 - Stops are **numbered**, and the numbers match the timeline exactly. Reference
