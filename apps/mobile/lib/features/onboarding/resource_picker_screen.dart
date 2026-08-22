@@ -7,6 +7,7 @@ import '../../data/resources_repository.dart';
 import '../../models/resource.dart';
 import '../../theme/app_tokens.dart';
 import 'resource_icons.dart';
+import '../../ui/button_spinner.dart';
 
 /// "What do you already have?" — the inventory Phase 2 filters activities
 /// against.
@@ -186,10 +187,7 @@ class _PickerBody extends StatelessWidget {
               FilledButton(
                 onPressed: onFinish,
                 child: saving
-                    ? const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const ButtonSpinner()
                     : const Text('Done'),
               ),
             ],

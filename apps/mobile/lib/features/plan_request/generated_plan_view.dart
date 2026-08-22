@@ -116,7 +116,7 @@ class _PlanBlock extends StatelessWidget {
             children: [
               Icon(
                 tokens.costOverBudgetIcon,
-                size: 18,
+                size: tokens.iconInline,
                 color: tokens.costOverBudget,
               ),
               SizedBox(width: tokens.xs),

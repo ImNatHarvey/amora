@@ -121,7 +121,7 @@ class ReportClosureButton extends StatelessWidget {
       padding: EdgeInsets.only(top: tokens.xs),
       child: TextButton.icon(
         onPressed: onPressed,
-        icon: const Icon(Icons.report_outlined, size: 18),
+        icon: Icon(Icons.report_outlined, size: tokens.iconInline),
         label: Text(label),
       ),
     );

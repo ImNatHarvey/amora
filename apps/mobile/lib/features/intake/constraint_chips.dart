@@ -96,7 +96,7 @@ class _Chip extends StatelessWidget {
       ),
       avatar: Icon(
         filled ? Icons.edit : Icons.add,
-        size: 16,
+        size: tokens.iconInline,
         color: filled
             ? theme.colorScheme.onSurfaceVariant
             : theme.colorScheme.primary,

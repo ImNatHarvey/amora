@@ -12,6 +12,7 @@ import '../../models/simple_plan.dart';
 import '../../theme/app_tokens.dart';
 import '../../ui/error_retry.dart';
 import 'plan_providers.dart';
+import '../../ui/button_spinner.dart';
 
 /// The barangays a user-added stop may sit in.
 ///
@@ -239,9 +240,9 @@ class _AddStopScreenState extends ConsumerState<AddStopScreen> {
                               width: 40,
                               height: 40,
                               child: Icon(
-                                Icons.place,
+                                Icons.place_outlined,
                                 color: theme.colorScheme.primary,
-                                size: 40,
+                                size: tokens.iconLarge,
                               ),
                             ),
                           ],
@@ -264,11 +265,7 @@ class _AddStopScreenState extends ConsumerState<AddStopScreen> {
               FilledButton(
                 onPressed: _saving ? null : _submit,
                 child: _saving
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const ButtonSpinner()
                     : const Text('Add to this plan'),
               ),
             ],

@@ -134,7 +134,7 @@ class _MemoryCard extends ConsumerWidget {
                               star <= memory.rating!
                                   ? Icons.star
                                   : Icons.star_border,
-                              size: 16,
+                              size: tokens.iconInline,
                               color: star <= memory.rating!
                                   ? theme.colorScheme.primary
                                   : theme.colorScheme.onSurfaceVariant,

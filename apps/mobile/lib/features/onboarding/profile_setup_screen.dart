@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/profiles_repository.dart';
 import '../../data/repository_exception.dart';
 import '../../theme/app_tokens.dart';
+import '../../ui/button_spinner.dart';
 
 /// The city Amora currently covers.
 ///
@@ -133,10 +134,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
               FilledButton(
                 onPressed: _saving ? null : _save,
                 child: _saving
-                    ? const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const ButtonSpinner()
                     : const Text('Continue'),
               ),
             ],

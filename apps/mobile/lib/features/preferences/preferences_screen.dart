@@ -8,6 +8,7 @@ import '../../models/profile.dart';
 import '../../theme/app_tokens.dart';
 import '../../ui/error_retry.dart';
 import '../../util/format.dart';
+import '../../ui/button_spinner.dart';
 
 /// "How do you usually plan?" — the three preferences that shape retrieval.
 ///
@@ -202,10 +203,7 @@ class _PreferencesFormState extends ConsumerState<_PreferencesForm> {
               FilledButton(
                 onPressed: _saving ? null : _save,
                 child: _saving
-                    ? const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const ButtonSpinner()
                     : const Text('Save'),
               ),
             ],
