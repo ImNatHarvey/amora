@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../models/intake.dart';
 import '../../models/simple_plan.dart';
 import '../../theme/app_tokens.dart';
 import '../../ui/error_retry.dart';
@@ -21,7 +22,15 @@ import '../../ui/button_spinner.dart';
 /// would make a bad answer look better than it is. The designed experience is
 /// Phase 4's job (`docs/00-architecture.md` §8).
 class PlanRequestScreen extends ConsumerStatefulWidget {
-  const PlanRequestScreen({super.key});
+  const PlanRequestScreen({this.constraints, super.key});
+
+  /// What the intake conversation already established, if it sent us here.
+  ///
+  /// Null when the form is opened directly — "Use the form" from an empty
+  /// conversation, or a deep link — and every field below then falls back to
+  /// the defaults it always had. The form has to work standalone: it is the
+  /// fallback when extraction fails (`docs/00-architecture.md` §8).
+  final IntakeConstraints? constraints;
 
   @override
   ConsumerState<PlanRequestScreen> createState() => _PlanRequestScreenState();
@@ -29,10 +38,44 @@ class PlanRequestScreen extends ConsumerStatefulWidget {
 
 class _PlanRequestScreenState extends ConsumerState<PlanRequestScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _budgetController = TextEditingController(text: '200');
+  late final TextEditingController _budgetController = TextEditingController(
+    text: switch (widget.constraints?.budgetPhpCents) {
+      final int cents => (cents / 100).round().toString(),
+      _ => '200',
+    },
+  );
 
   OriginArea? _origin;
-  late DateTime _plannedForManila = _defaultTime();
+
+  /// The barangay the conversation named, held until the area list loads.
+  ///
+  /// The dropdown needs an [OriginArea] — a name plus coordinates plus a place
+  /// count — and only the server has those. So the name waits here and is
+  /// matched against the list the moment it arrives.
+  late String? _pendingOriginArea = widget.constraints?.originArea;
+
+  late DateTime _plannedForManila = switch (widget.constraints?.plannedForUtc) {
+    final DateTime utc => toManila(utc),
+    _ => _defaultTime(),
+  };
+
+  /// The area the conversation named, or the first one, or whatever the user
+  /// has since picked.
+  ///
+  /// Falling back to `list.first` is what this screen always did, and it is
+  /// still right for a form opened cold. What was wrong was doing it when the
+  /// conversation had already said "Lolomboy" — the answer was thrown away and
+  /// the dropdown silently showed whichever barangay sorts first.
+  OriginArea _resolveOrigin(List<OriginArea> list) {
+    final named = _pendingOriginArea;
+    if (named == null) return list.first;
+
+    final match = list.where((a) => a.area == named).firstOrNull;
+    // Cleared either way: an area the server does not offer must not keep
+    // overriding a choice the user makes afterwards.
+    _pendingOriginArea = null;
+    return _origin = match ?? list.first;
+  }
 
   /// Now, in Manila, rounded up to the next half hour — nobody plans for 18:03.
   static DateTime _defaultTime() {
@@ -164,7 +207,7 @@ class _PlanRequestScreenState extends ConsumerState<PlanRequestScreen> {
                         style: theme.textTheme.bodyMedium,
                       )
                     : DropdownButtonFormField<OriginArea>(
-                        initialValue: _origin ?? list.first,
+                        initialValue: _origin ?? _resolveOrigin(list),
                         decoration: const InputDecoration(
                           labelText: 'Starting from',
                           border: OutlineInputBorder(),
@@ -174,7 +217,9 @@ class _PlanRequestScreenState extends ConsumerState<PlanRequestScreen> {
                             DropdownMenuItem(
                               value: area,
                               child: Text(
-                                '${area.area} (${area.placeCount} places)',
+                                '${area.area} '
+                                '(${area.placeCount} '
+                                '${area.placeCount == 1 ? "place" : "places"})',
                               ),
                             ),
                         ],

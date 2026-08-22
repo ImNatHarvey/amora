@@ -240,7 +240,13 @@ class _IntakeScreenState extends ConsumerState<IntakeScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () => context.push(Routes.planRequest),
+                    // Send what the conversation established. Without this
+                    // the form opens on its own defaults and every answer the
+                    // user just gave is discarded — which is the whole intake.
+                    onPressed: () => context.push(
+                      Routes.planRequest,
+                      extra: state.constraints,
+                    ),
                     child: const Text('Plan it'),
                   ),
                 ),

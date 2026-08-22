@@ -20,6 +20,7 @@ import '../features/onboarding/resource_picker_screen.dart';
 import '../features/plan_request/plan_request_screen.dart';
 import 'auth_refresh.dart';
 import 'shell.dart';
+import '../models/intake.dart';
 
 /// Route paths, so no screen hardcodes a string literal.
 abstract final class Routes {
@@ -232,7 +233,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: Routes.planRequest,
-        builder: (context, state) => const PlanRequestScreen(),
+        // The intake sends what it established. Null when the form is opened
+        // cold, which it must still support.
+        builder: (context, state) =>
+            PlanRequestScreen(constraints: state.extra as IntakeConstraints?),
       ),
       // Saved plan and place detail. Both take an id and both are behind the
       // same ladder; RLS is what actually decides whether the row comes back,
